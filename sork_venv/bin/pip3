@@ -1,4 +1,4 @@
-#!/Users/jonathankim/Downloads/Sork_Lab2/sork/sork_venv/bin/python
+#!/Users/jonathankim/Downloads/sork/sork_venv/bin/python3.11
 # -*- coding: utf-8 -*-
 import re
 import sys
