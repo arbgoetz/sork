@@ -1,0 +1,24 @@
+Some general plans / ideas to be implemented into the app
+
+Database Page:
+    -> Data is fetch-able 
+    -> Next to do: Integrate the database onto the home page of the app
+
+Stats/Plots:
+    Linear Modeling (Linear Regression)
+    —> Use Scikit-learn
+
+    Principal Component Analysis (PCA)
+    —> Use scikit-learn
+
+    Summary Statistics (Mean, Med, Max, etc)
+    —> Use Pandas
+
+    Plotting of Regression Line
+    —> Use Plotly.express
+
+Upload/Download system:
+    -> Create function that converts Uploaded data type into valid SQL YYPIvSbjkQuE4NRb0yG5P94FW6LqjviOvrv1vA
+
+Maps (graphs):
+    -> Interactive graph of various tree data 
