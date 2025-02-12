@@ -10,6 +10,3 @@ sork_venv/
 # Compiled Python files
 __pycache__/
 .DS_Store
-
-# Extra Files
-plan.txt

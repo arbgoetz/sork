@@ -1,24 +1,21 @@
-from dash import Dash, html, dcc, callback, Output, Input
-import plotly.express as px
-import pandas as pd
+from dash import dcc, html, Dash
+from tabs.dataset_tab import dataset_layout
+from tabs.stats import stats_layout
 
-df = pd.read_csv('https://raw.githubusercontent.com/plotly/datasets/master/gapminder_unfiltered.csv')
+css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
+app = Dash(name="Sork Lab Dashboard", external_stylesheets=css)
 
-app = Dash()
+# Define the layout
+app.layout = html.Div([
+    html.Div([
+        html.H1("Sork Lab Dashboard", className="text-center fw-bold m-2"),
+        html.Br(),
+        dcc.Tabs([
+            dataset_layout,
+            stats_layout,
+        ])
+    ], className="col-8 mx-auto"),
+], style={"background-color": "#e5ecf6", "height": "100vh"})
 
-app.layout = [
-    html.H1(children='Title of Dash App', style={'textAlign':'center'}),
-    dcc.Dropdown(df.country.unique(), 'Canada', id='dropdown-selection'),
-    dcc.Graph(id='graph-content')
-]
-
-@callback(
-    Output('graph-content', 'figure'),
-    Input('dropdown-selection', 'value')
-)
-def update_graph(value):
-    dff = df[df.country==value]
-    return px.line(dff, x='year', y='pop')
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
