@@ -7,8 +7,8 @@ from database_test import fetch_data_from_sql
 load_dotenv()
 table_options = os.getenv("TABLE_OPTIONS", "").split(",")
 
-def test_fetch_data():
-    table = table_options[0].strip()
+def test_fetch_data(num):
+    table = table_options[num].strip()
     query = f"SELECT TOP 5 * FROM [dbo].[{table}]"
 
     try:
@@ -21,5 +21,12 @@ def test_fetch_data():
     except Exception as e:
         print(f"Test failed: {e}")
 
+def test():
+    print("Which table would you like to access? \n")
+    for i in range(len(table_options)):
+        print(f"({i+1}) \t", table_options[i])
+    num = input("\nTable: ")
+    test_fetch_data(int(num))
+
 if __name__ == "__main__":
-    test_fetch_data()
+    test()
