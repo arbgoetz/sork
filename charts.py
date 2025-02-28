@@ -21,22 +21,28 @@ gapminder_df["Year"] = gapminder_df.Year.dt.year
 
 db_df = fetch_data_from_sql(f"SELECT TOP 20 * FROM [dbo].[{default_table}]")
 
-def create_database_Table(num):
+def create_database_Table(num, selected_columns=None):
+    """Generates a table figure dynamically based on the selected table index and columns."""
     if num is None or num < 0 or num >= len(table_options):
-        return go.Figure()
-    
-    selected_table = table_options[num]
+        return go.Figure()  # Return empty figure if index is invalid
 
+    selected_table = table_options[num]
+    
     try:
         db_df = fetch_data_from_sql(f"SELECT TOP 20 * FROM [dbo].[{selected_table}]")
     except Exception as e:
-        print(f"Error fetching data from table{selected_table}")
-        return go.Figure()
-    
+        print(f"Error fetching data from table {selected_table}: {e}")
+        return go.Figure()  # Return an empty figure if query fails
+
+    # Filter selected columns
+    if selected_columns:
+        db_df = db_df[selected_columns]  # Show only selected columns
+
     fig = go.Figure(data=[go.Table(
         header=dict(values=db_df.columns, align='left'),
         cells=dict(values=db_df.values.T, align='left'))])
     fig.update_layout(paper_bgcolor="#e5ecf6", margin={"t":0, "l":0, "r":0, "b":0}, height=700)
+    
     return fig
 
 # Stats page charts
