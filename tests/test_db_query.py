@@ -6,7 +6,7 @@ from database_test import fetch_data_from_sql
 load_dotenv()
 
 def test_fetch_data():
-    query = f"SELECT TOP 5 * FROM [dbo].[2013-2024 census long_coreonly_fordb_101624]"
+    query = f"SELECT TOP 5 * FROM [dbo].[2013-2024 census long_coreonly_fordb_011325]"
 
     try:
         # Call the updated function
