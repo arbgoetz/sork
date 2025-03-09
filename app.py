@@ -13,9 +13,14 @@ app.layout = html.Div([
         dcc.Tabs([
             dataset_layout,
             stats_layout,
-        ])
+        ], className="mb-4")  # Add margin below tabs
     ], className="col-8 mx-auto"),
-], style={"background-color": "#e5ecf6", "height": "100vh"})
+    # Add a bottom footer for the entire app
+    html.Footer(
+        html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
+        style={"backgroundColor": "#f5f5f5", "borderTop": "1px solid #e3e3e3", "width": "100%", "position": "fixed", "bottom": "0"}
+    )
+], style={"background-color": "#e5ecf6", "minHeight": "100vh", "paddingBottom": "60px"})  # Add padding at bottom for footer
 
 if __name__ == "__main__":
     app.run(debug=True)
