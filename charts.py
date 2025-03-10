@@ -88,39 +88,3 @@ def create_database_Table(num, selected_columns=None, row_count=20):
         )
     
     return fig
-
-
-    if not selected_column_1 or not selected_column_2:
-        return px.scatter()
-    
-    if selected_column_1 not in db_df.columns or selected_column_2 not in db_df.columns:
-        raise ValueError(f"One or more selected columns not found in data frame.")
-    
-    filtered_df = db_df[~(db_df[selected_column_1].isna() | db_df[selected_column_2].isna())].copy()
-    
-    x = filtered_df[selected_column_1]
-    y = filtered_df[selected_column_2]
-    slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-    
-    x_range = np.linspace(x.min(), x.max(), 100)
-    y_predicted = slope * x_range + intercept
-
-    fig = px.scatter(filtered_df, x=selected_column_1, y=selected_column_2,
-                    title=f"Linear Regression: {selected_column_2} vs {selected_column_1}")
-    
-    fig.add_scatter(x=x_range, y=y_predicted, mode='lines', name='Regression Line',
-                   line=dict(color='red'))
-    
-    r_squared = r_value ** 2
-    eq_text = f"y = {slope:.2f}x + {intercept:.2f}"
-    r2_text = f"R² = {r_squared:.3f}"
-    fig.update_layout(
-        title=f"Linear Regression: {selected_column_2} vs {selected_column_1}<br><sub>{eq_text} | {r2_text}</sub>",
-        paper_bgcolor="#e5ecf6",
-        height=600,
-        xaxis_title=selected_column_1,
-        yaxis_title=selected_column_2,
-        showlegend=True
-    )
-    
-    return fig
