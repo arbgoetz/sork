@@ -3,7 +3,6 @@ import plotly.graph_objects as go
 import numpy as np
 from dash import html
 from scipy import stats
-from plotly.data import gapminder
 from database import fetch_data_from_sql
 from dotenv import load_dotenv
 import os

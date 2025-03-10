@@ -1,6 +1,6 @@
 from dash import dcc, html, Dash
 from tabs.dataset_tab import dataset_layout
-# from tabs.stats import 
+from tabs.stats import stats_layout
 from tabs.upload import upload_layout
 from tabs.download import download_layout
 from tabs.map import map_layout
@@ -15,9 +15,10 @@ app.layout = html.Div([
         html.Br(),
         dcc.Tabs([
             dataset_layout,
+            stats_layout,
+            map_layout,
             upload_layout,
             download_layout,
-            map_layout,
         ], className="mb-4")  # Add margin below tabs
     ], className="col-8 mx-auto"),
     # Add a bottom footer for the entire app
