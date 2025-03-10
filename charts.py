@@ -55,15 +55,15 @@ def create_database_Table(num, selected_columns=None, row_count=20):
             font=dict(color='black', size=11),
             height=25
         ),
-        columnwidth=column_width  # Set fixed column width when scrolling
+        columnwidth=column_width 
     )])
     
     # Update layout with improved styling
     fig.update_layout(
         paper_bgcolor="#e5ecf6", 
         plot_bgcolor="#e5ecf6",
-        margin={"t":40, "l":0, "r":0, "b":0},  # Adjust top margin for title
-        height=min(600, 150 + len(db_df) * 25),  # Dynamic height based on number of rows
+        margin={"t":40, "l":0, "r":0, "b":0},  
+        height=min(600, 150 + len(db_df) * 25),  
         title={
             'text': f"Showing {len(db_df)} rows from {selected_table}",
             'y':0.98,
@@ -71,13 +71,11 @@ def create_database_Table(num, selected_columns=None, row_count=20):
             'xanchor': 'center',
             'yanchor': 'top'
         },
-        # Enable horizontal scrolling if needed
         autosize=True
     )
     
     # Add horizontal scrolling settings when needed
     if enable_scrolling:
-        # Calculate the width needed for all columns at 150px each plus some buffer
         total_width = len(db_df.columns) * 150
         fig.update_layout(
             width=total_width,

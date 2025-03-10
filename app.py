@@ -8,6 +8,7 @@ from tabs.map import map_layout
 css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
 app = Dash(name="Sork Lab Dashboard", external_stylesheets=css)
 
+# Describe App Layout
 app.layout = html.Div([
     html.Div([
         html.H1("Sork Lab Dashboard", className="text-center fw-bold m-2"),
