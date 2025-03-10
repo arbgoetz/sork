@@ -2,6 +2,16 @@
 
 Plotly Dash Dashboard for Sork Lab in UCLA's Department of Ecology and Evolutionary Biology
 
+Step 0: Clone the Repo
+
+- On the repo, click the green button that says "<> Code"
+- Copy the HTTPS link that shows up
+- Open a new terminal and cd into whatever folder you want to clone the repo into
+  i.e. "cd Desktop" will move you to your computer's desktop
+  i.e. "cd .." will go backwards if you change your mind
+- Clone the repo by running the following command:
+  git clone https://github.com/jkim1626/sork.git
+
 Step 1: Create a virtual environment
 
 - In the terminal of your IDE (RStudio, VScode, etc), run the following command:
