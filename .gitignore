@@ -5,6 +5,7 @@
 
 # Virtual Environment (sork_venv)
 sork_venv/
+venv/
 
 # Compiled Python files
 __pycache__/
