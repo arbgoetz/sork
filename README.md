@@ -14,9 +14,12 @@ Step 0: Clone the Repo
 
 Step 1: Create a virtual environment
 
-- In the terminal of your IDE (RStudio, VScode, etc), run the following command:
+- In the terminal of your IDE (RStudio, VScode, etc), run the following command to create a virtual environment:
   python -m venv <name_of_virtual_environment>
   i.e. python -m venv hello
+- Then run the following command to activate the virtual environment you created:
+  source <name_of_virtual_environment>/bin/activate
+  i.e. source hello/bin/activate
 
 Step 2: Install all modules/dependencies
 
