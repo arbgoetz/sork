@@ -14,7 +14,7 @@ dataset_layout = dcc.Tab(
     [
         html.Br(),
         html.Label("Select a table:", style={"fontWeight": "bold", "marginBottom": "5px", "fontSize": "16px"}), 
-        dcc.Dropdown(table_options, id="dataset_dropdown", placeholder="Select a table"),
+        dcc.Dropdown(table_options, id="dataset_dropdown", placeholder="Table Options"),
         html.Div([
             html.Div([
                 html.Label("Select columns to include:", style={"fontWeight": "bold", "marginBottom": "5px"}),
