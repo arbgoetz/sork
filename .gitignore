@@ -2,11 +2,9 @@
 
 # Environment Variables 
 .env
-*.env
 
 # Virtual Environment (sork_venv)
 sork_venv/
-sork_venv
 
 # Compiled Python files
 __pycache__/
