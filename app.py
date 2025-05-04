@@ -10,8 +10,11 @@ app = Dash(name="Sork Lab Dashboard", external_stylesheets=css)
 
 # Describe App Layout
 app.layout = html.Div([
+    html.Div(
+        html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
+        style={"backgroundColor":'white', "padding": "15px"}
+    ),
     html.Div([
-        html.H1("Sork Lab Dashboard", className="text-center fw-bold m-2"),
         html.Br(),
         dcc.Tabs([
             dataset_layout,

@@ -10,3 +10,6 @@ venv/
 # Compiled Python files
 __pycache__/
 .DS_Store
+
+# QPLAD Management Files
+QPLAD_data_management

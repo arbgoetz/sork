@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+map_table = os.getenv("MAP_TABLE")
+
 def fetch_data_from_sql(query):
     """Fetch data from SQL Server using SQLAlchemy with PyODBC."""
     
@@ -30,7 +32,8 @@ def fetch_data_from_sql(query):
 
         with engine.connect() as connection:
             df = pd.read_sql_query(query, connection)
-
+            print(type(df))
+            print(df.shape)
         return df
 
     except Exception as e:
@@ -40,3 +43,7 @@ def fetch_data_from_sql(query):
     finally:
         if 'engine' in locals() and engine:
             engine.dispose()
+
+if __name__ == '__main__':
+    df = fetch_data_from_sql(f"SELECT TOP 5 * FROM dbo.[{map_table}]")
+    print(df)

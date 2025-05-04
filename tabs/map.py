@@ -1,13 +1,14 @@
 import dash
 from dash import dcc, html, Input, Output, callback
 import plotly.graph_objects as go
-import dash_bootstrap_components as dbc
-import json
-import os
 from dotenv import load_dotenv
+import os
+from database import fetch_data_from_sql
 
 # Load environment variables
 load_dotenv()
+
+map_table = os.getenv("MAP_TABLE")
 
 # Create a layout for the map tab
 map_layout = dcc.Tab(
@@ -71,16 +72,20 @@ def update_map(reset_clicks):
     # Create the base map
     fig = go.Figure()
 
-    # Add major California cities for reference
+    # Fetch coordinates for map
+    lon_list = fetch_data_from_sql(f"SELECT AVG(Longitude) AS avg_longitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_longitude'].tolist()
+    lat_list = fetch_data_from_sql(f"SELECT AVG(Latitude) AS avg_latitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_latitude'].tolist()      
+    text_list = fetch_data_from_sql(f"SELECT DISTINCT locality_full_name FROM dbo.[{map_table}]")['locality_full_name'].tolist()
+    
     fig.add_trace(go.Scattermapbox(
         mode = "markers+text",
-        lon = [-122.4194, -118.2437, -117.1611, -121.4944, -119.7871],
-        lat = [37.7749, 34.0522, 32.7157, 38.5816, 36.7378],
-        text = ["San Francisco", "Los Angeles", "San Diego", "Sacramento", "Fresno"],
+        lon = lon_list,
+        lat = lat_list,
+        text = text_list,
         textposition = "top right",
-        marker = {'size': 8, 'color': '#007bff'},
+        marker = {'size':8, 'color':'#007bff'},
         hoverinfo='text'
-    ))
+    )),
     
     # Set up the map layout - using only standard map style
     # Always start with the zoomed-in view
