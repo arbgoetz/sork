@@ -1,7 +1,10 @@
+Authlib==1.5.2
 blinker==1.9.0
 certifi==2025.1.31
+cffi==1.17.1
 charset-normalizer==3.4.1
 click==8.1.8
+cryptography==44.0.3
 dash==2.18.2
 dash-bootstrap-components==1.7.1
 dash-core-components==2.0.0
@@ -20,6 +23,7 @@ numpy==2.2.2
 packaging==24.2
 pandas==2.2.3
 plotly==6.0.0
+pycparser==2.22
 pyodbc==5.2.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
