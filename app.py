@@ -4,6 +4,7 @@ from tabs.stats import stats_layout
 from tabs.upload import upload_layout
 from tabs.download import download_layout
 from tabs.map import map_layout
+from tabs.joins import joins_layout
 
 css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
 app = Dash(name="Sork Lab Dashboard", external_stylesheets=css)
@@ -23,6 +24,7 @@ app.layout = html.Div([
             dcc.Tabs(id='tabs', value='tab-1', children=[
                 dataset_layout,
                 stats_layout,
+                joins_layout,
                 map_layout,
                 upload_layout,
                 download_layout,

@@ -12,7 +12,7 @@ import plotly.express as px
 load_dotenv()
 
 # Table Options
-table_options = os.getenv("TABLE_OPTIONS", "").split(",")
+table_options = os.getenv("TABLE_OPTIONS").split(",")
 
 # Layout for Dataset Tab
 dataset_layout = dcc.Tab(
@@ -23,6 +23,7 @@ dataset_layout = dcc.Tab(
         # Store the tab's active state
         dcc.Store(id="dataset-tab-active", data=False),
         html.Br(),
+        html.H4("Table Display", style={"marginBottom": "20px"}),
         html.Label("Select a table:", style={"fontWeight": "bold", "marginBottom": "5px", "fontSize": "16px"}),
         dcc.Dropdown(table_options, id="dataset_dropdown", placeholder="Table Options"),
         # Column checklist

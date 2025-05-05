@@ -14,7 +14,7 @@ map_table = os.getenv("MAP_TABLE")
 map_layout = dcc.Tab(
     [
         html.Br(),
-        html.H4("California Map", style={"marginBottom": "20px"}),
+        html.H4("Maternal Tree Locations", style={"marginBottom": "20px"}),
         
         html.Div([
             html.Div([
@@ -61,7 +61,7 @@ map_layout = dcc.Tab(
             ], className="col-12")
         ], className="row")
     ],
-    label="California Map",
+    label="Tree Sites",
     style={"padding": "15px"}
 )
 

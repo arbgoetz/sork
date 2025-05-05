@@ -16,7 +16,7 @@ import os
 load_dotenv()
 
 # Table Options
-table_options = os.getenv("TABLE_OPTIONS", "").split(",")
+table_options = os.getenv("TABLE_OPTIONS").split(",")
 
 # Statistical test options
 stat_test_options = [

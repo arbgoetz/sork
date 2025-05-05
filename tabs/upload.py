@@ -14,7 +14,7 @@ from sqlalchemy import create_engine
 load_dotenv()
 
 # Table Options
-table_options = os.getenv("TABLE_OPTIONS", "").split(",")
+table_options = os.getenv("TABLE_OPTIONS").split(",")
 
 # Database connection settings from environment variables
 driver = "ODBC Driver 17 for SQL Server"
