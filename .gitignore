@@ -13,6 +13,3 @@ __pycache__/
 
 # QPLAD Management Files
 QPLAD_data_management
-
-# Image Files
-/assets
