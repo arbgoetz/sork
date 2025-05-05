@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, Input, Output, State, callback, dash_table
+from dash import dcc, html, Input, Output, State, callback, dash_table, ctx
 import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
 import pandas as pd
@@ -17,6 +17,8 @@ table_options = os.getenv("TABLE_OPTIONS").split(",")
 
 download_layout = dcc.Tab(
     [
+        # Store the tab's active state
+        dcc.Store(id="download-tab-active", data=False),
         html.Br(),
         html.H4("Download Data as CSV", style={"marginBottom": "20px"}),
         
@@ -120,8 +122,38 @@ download_layout = dcc.Tab(
         ], id="download-container", style={"display": "none"})
     ],
     label="Download Data",
+    id="download-tab",
     style={"padding": "15px"}
 )
+
+# Track tab selection state
+@callback(
+    Output('download-tab-active', 'data'),
+    [Input('main-tabs', 'value')]
+)
+def set_download_tab_active(tab_value):
+    return tab_value == 'download-tab'
+
+# Reset when tab is switched
+@callback(
+    [Output('download_table_dropdown', 'value', allow_duplicate=True),
+     Output('download-start-row', 'value', allow_duplicate=True),
+     Output('download-end-row', 'value', allow_duplicate=True),
+     Output('download-columns', 'options', allow_duplicate=True),
+     Output('download-columns', 'value', allow_duplicate=True),
+     Output('download-row-info', 'children', allow_duplicate=True),
+     Output('download-preview', 'children', allow_duplicate=True),
+     Output('download-container', 'style', allow_duplicate=True)],
+    [Input('download-tab-active', 'data')],
+    prevent_initial_call=True
+)
+def reset_download_tab_data(is_active):
+    if not is_active:
+        # Reset all controls when leaving the tab
+        return None, 1, 100, [], [], "", [], {"display": "none"}
+    else:
+        # Don't reset when entering the tab
+        return [dash.no_update] * 8
 
 # Callback to show download container when table is selected
 @callback(
@@ -173,8 +205,7 @@ def update_column_options(selected_table):
     prevent_initial_call=True
 )
 def handle_column_selection(select_all, deselect_all, options, current_values):
-    ctx = dash.callback_context
-    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    triggered_id = ctx.triggered_id if ctx.triggered_id else 'no-id'
     
     if triggered_id == "download-select-all-btn":
         return [option["value"] for option in options]

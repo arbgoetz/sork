@@ -100,7 +100,7 @@ dataset_layout = dcc.Tab(
 # Track tab selection state
 @callback(
     Output('dataset-tab-active', 'data'),
-    [Input('tabs', 'value')]
+    [Input('main-tabs', 'value')]  
 )
 def set_tab_active(tab_value):
     return tab_value == 'dataset-tab'

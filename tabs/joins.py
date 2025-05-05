@@ -195,7 +195,7 @@ joins_layout = dcc.Tab(
 # Track tab selection state
 @callback(
     Output('joins-tab-active', 'data'),
-    [Input('tabs', 'value')]
+    [Input('main-tabs', 'value')]
 )
 def set_joins_tab_active(tab_value):
     return tab_value == 'joins-tab'

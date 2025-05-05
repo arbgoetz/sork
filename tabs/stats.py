@@ -137,7 +137,7 @@ stats_layout = dcc.Tab(
 # Track tab selection state
 @callback(
     Output('stats-tab-active', 'data'),
-    [Input('tabs', 'value')]
+    [Input('main-tabs', 'value')]
 )
 def set_stats_tab_active(tab_value):
     return tab_value == 'stats-tab'

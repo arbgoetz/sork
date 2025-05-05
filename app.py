@@ -21,7 +21,8 @@ app.layout = html.Div([
         # Tab content container
         html.Div([
             html.Br(),
-            dcc.Tabs(id='tabs', value='tab-1', children=[
+            # Give the tabs a unique ID that all components can access
+            dcc.Tabs(id='main-tabs', value='dataset-tab', children=[
                 dataset_layout,
                 stats_layout,
                 joins_layout,
@@ -40,7 +41,7 @@ app.layout = html.Div([
             "color": "#e3e3e3", 
             "padding": "20px", 
             "width": "100%",
-            "marginTop": "40px"  # Add space between content and footer
+            "marginTop": "40px"
         }
     )
 ], style={

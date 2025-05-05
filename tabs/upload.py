@@ -1,6 +1,7 @@
-from dash import dcc, html, Input, Output, State, callback, dash_table
+from dash import dcc, html, Input, Output, State, callback, dash_table, ctx
 import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
+import dash
 import pandas as pd
 import io
 import base64
@@ -31,6 +32,8 @@ connection_string = (
 
 upload_layout = dcc.Tab(
     [
+        # Store the tab's active state
+        dcc.Store(id="upload-tab-active", data=False),
         html.Br(),
         html.H4("Upload CSV File to Database", style={"marginBottom": "20px"}),
         
@@ -93,8 +96,38 @@ upload_layout = dcc.Tab(
         ], id="upload-container", style={"display": "none"})
     ],
     label="Upload Data",
+    id="upload-tab",
     style={"padding": "15px"}
 )
+
+# Track tab selection state
+@callback(
+    Output('upload-tab-active', 'data'),
+    [Input('main-tabs', 'value')]
+)
+def set_upload_tab_active(tab_value):
+    return tab_value == 'upload-tab'
+
+# Reset when tab is switched
+@callback(
+    [Output('upload_table_dropdown', 'value', allow_duplicate=True),
+     Output('upload-csv', 'contents', allow_duplicate=True),
+     Output('upload-button', 'disabled', allow_duplicate=True),
+     Output('table-structure-info', 'children', allow_duplicate=True),
+     Output('upload-status', 'children', allow_duplicate=True),
+     Output('csv-preview', 'children', allow_duplicate=True),
+     Output('upload-result', 'children', allow_duplicate=True),
+     Output('upload-container', 'style', allow_duplicate=True)],
+    [Input('upload-tab-active', 'data')],
+    prevent_initial_call=True
+)
+def reset_upload_tab_data(is_active):
+    if not is_active:
+        # Reset all controls when leaving the tab
+        return None, None, True, [], [], [], [], {"display": "none"}
+    else:
+        # Don't reset when entering the tab
+        return [dash.no_update] * 8
 
 # Callback to show upload container when table is selected
 @callback(
@@ -157,6 +190,8 @@ def display_table_structure(selected_table):
 
 # Function to parse CSV content
 def parse_csv(contents):
+    if contents is None:
+        return None, None
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
     
