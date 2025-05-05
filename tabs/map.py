@@ -54,6 +54,8 @@ map_layout = dcc.Tab(
                         html.Br(),
                         "• Click 'Reset View' to return to the default view of California",
                         html.Br(),
+                        "• Click the camera icon on the top right to take download the plot",
+                        html.Br(),
                     ], style={"fontSize": "0.9em", "color": "#666"})
                 ], style={"marginTop": "15px"})
             ], className="col-12")

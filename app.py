@@ -1,5 +1,5 @@
 from dash import dcc, html, Dash
-from tabs.dataset_tab import dataset_layout
+from tabs.dataset import dataset_layout
 from tabs.stats import stats_layout
 from tabs.upload import upload_layout
 from tabs.download import download_layout
@@ -16,7 +16,7 @@ app.layout = html.Div([
     ),
     html.Div([
         html.Br(),
-        dcc.Tabs([
+        dcc.Tabs(id='tabs', value='tab-1', children=[
             dataset_layout,
             stats_layout,
             map_layout,
@@ -26,7 +26,7 @@ app.layout = html.Div([
     ], className="col-8 mx-auto"),
     html.Footer(
         html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
-        style={"backgroundColor": "#f5f5f5", "borderTop": "1px solid #e3e3e3", "width": "100%", "position": "fixed", "bottom": "0"}
+        style={"backgroundColor": "#f5f5f5", "color": "#e3e3e3", "padding": "20px", "width": "100%", "position": "fixed", "bottom": "0"}
     )
 ], style={"background-color": "#e5ecf6", "minHeight": "100vh", "paddingBottom": "60px"}) 
 

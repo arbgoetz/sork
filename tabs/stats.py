@@ -1,4 +1,5 @@
-from dash import dcc, html, Input, Output, State, callback
+from dash import dcc, html, Input, Output, State, callback, ctx
+import dash
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
@@ -26,7 +27,12 @@ stat_test_options = [
 
 # Create the layout for the stats tab
 stats_layout = dcc.Tab(
-    [
+    label="Statistical Analysis",
+    id="stats-tab",
+    style={"padding": "15px"},
+    children=[
+        # Store the tab's active state
+        dcc.Store(id="stats-tab-active", data=False),
         html.Br(),
         html.H4("Statistical Analysis", style={"marginBottom": "20px"}),
         
@@ -125,39 +131,87 @@ stats_layout = dcc.Tab(
                         style={"textAlign": "center", "marginTop": "50px", "color": "#666"})
             )
         ]),
-    ],
-    label="Statistical Analysis",
-    style={"padding": "15px"}
+    ]
 )
 
-# Callback to show test selection when table is selected
+# Track tab selection state
 @callback(
-    [Output("test-selection-div", "style"),
-     Output("stats-placeholder", "style")],
-    [Input("stats-table-dropdown", "value")]
+    Output('stats-tab-active', 'data'),
+    [Input('tabs', 'value')]
 )
-def show_test_selection(selected_table):
+def set_stats_tab_active(tab_value):
+    return tab_value == 'stats-tab'
+
+# Reset all components when tab is switched
+@callback(
+    [Output('stats-table-dropdown', 'value', allow_duplicate=True),
+     Output('stats-test-dropdown', 'value', allow_duplicate=True),
+     Output('lr-x-variable', 'value', allow_duplicate=True),
+     Output('lr-y-variable', 'value', allow_duplicate=True),
+     Output('pca-variables', 'value', allow_duplicate=True),
+     Output('summary-variable', 'value', allow_duplicate=True),
+     Output('lr-output', 'children', allow_duplicate=True),
+     Output('pca-output', 'children', allow_duplicate=True),
+     Output('summary-output', 'children', allow_duplicate=True)],
+    [Input('stats-tab-active', 'data')],
+    prevent_initial_call=True
+)
+def reset_stats_tab_data(is_active):
+    if not is_active:
+        # Reset all controls when leaving the tab
+        return None, None, None, None, None, None, html.Div(), html.Div(), html.Div()
+    else:
+        # Don't reset when entering the tab
+        return [dash.no_update] * 9
+
+# Reset dependent controls when table changes
+@callback(
+    [Output('stats-test-dropdown', 'value', allow_duplicate=True),
+     Output('lr-x-variable', 'value', allow_duplicate=True),
+     Output('lr-y-variable', 'value', allow_duplicate=True),
+     Output('pca-variables', 'value', allow_duplicate=True),
+     Output('summary-variable', 'value', allow_duplicate=True),
+     Output('lr-output', 'children', allow_duplicate=True),
+     Output('pca-output', 'children', allow_duplicate=True),
+     Output('summary-output', 'children', allow_duplicate=True),
+     Output('test-selection-div', 'style'),
+     Output('test-container', 'style'),
+     Output('stats-placeholder', 'style')],
+    [Input('stats-table-dropdown', 'value')],
+    prevent_initial_call=True
+)
+def reset_on_table_change(selected_table):
     if selected_table:
-        return {"display": "block"}, {"display": "none"}
-    return {"display": "none"}, {"display": "block"}
+        # Reset analysis-related controls but show test selection
+        return None, None, None, None, None, html.Div(), html.Div(), html.Div(), {"display": "block"}, {"display": "none"}, {"display": "none"}
+    else:
+        # Hide everything when no table is selected
+        return None, None, None, None, None, html.Div(), html.Div(), html.Div(), {"display": "none"}, {"display": "none"}, {"display": "block"}
 
 # Callback to show appropriate test container based on selection
 @callback(
-    [Output("test-container", "style"),
+    [Output("test-container", "style", allow_duplicate=True),
      Output("linear-regression-div", "style"),
      Output("pca-div", "style"),
-     Output("summary-stats-div", "style")],
-    [Input("stats-test-dropdown", "value")]
+     Output("summary-stats-div", "style"),
+     Output('lr-output', 'children', allow_duplicate=True),
+     Output('pca-output', 'children', allow_duplicate=True),
+     Output('summary-output', 'children', allow_duplicate=True)],
+    [Input("stats-test-dropdown", "value")],
+    prevent_initial_call=True
 )
 def show_test_container(selected_test):
+    # Reset outputs when test type changes
+    empty_output = html.Div()
+    
     if not selected_test:
-        return {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}
+        return {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}, empty_output, empty_output, empty_output
     
     lr_style = {"display": "block"} if selected_test == "linear_regression" else {"display": "none"}
     pca_style = {"display": "block"} if selected_test == "pca" else {"display": "none"}
     summary_style = {"display": "block"} if selected_test == "summary_stats" else {"display": "none"}
     
-    return {"display": "block"}, lr_style, pca_style, summary_style
+    return {"display": "block"}, lr_style, pca_style, summary_style, empty_output, empty_output, empty_output
 
 # Function to get numeric columns from a table
 def get_numeric_columns(table_name):
@@ -192,11 +246,12 @@ def update_variable_options(selected_table):
 
 # Linear Regression Callback
 @callback(
-    Output("lr-output", "children"),
+    Output("lr-output", "children", allow_duplicate=True),
     [Input("run-lr-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("lr-x-variable", "value"),
-     State("lr-y-variable", "value")]
+     State("lr-y-variable", "value")],
+    prevent_initial_call=True
 )
 def generate_linear_regression(n_clicks, selected_table, x_var, y_var):
     if n_clicks is None or not selected_table or not x_var or not y_var:
@@ -329,11 +384,12 @@ def generate_linear_regression(n_clicks, selected_table, x_var, y_var):
 
 # PCA Callback
 @callback(
-    Output("pca-output", "children"),
+    Output("pca-output", "children", allow_duplicate=True),
     [Input("run-pca-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("pca-variables", "value"),
-     State("pca-dimensions", "value")]
+     State("pca-dimensions", "value")],
+    prevent_initial_call=True
 )
 def generate_pca(n_clicks, selected_table, variables, dimensions):
     if n_clicks is None or not selected_table or not variables or len(variables) < 2:
@@ -472,10 +528,11 @@ def generate_pca(n_clicks, selected_table, variables, dimensions):
 
 # Summary Statistics Callback
 @callback(
-    Output("summary-output", "children"),
+    Output("summary-output", "children", allow_duplicate=True),
     [Input("run-summary-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
-     State("summary-variable", "value")]
+     State("summary-variable", "value")],
+    prevent_initial_call=True
 )
 def generate_summary_statistics(n_clicks, selected_table, variable):
     if n_clicks is None or not selected_table or not variable:
