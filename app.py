@@ -9,7 +9,7 @@ from tabs.joins import joins_layout
 import os
 import secrets
 from dotenv import load_dotenv
-from flask import Flask, redirect, url_for, session, jsonify
+from flask import Flask, redirect, session, jsonify
 from authlib.integrations.flask_client import OAuth
 
 load_dotenv()
@@ -63,59 +63,113 @@ def is_authenticated():
     return jsonify({"authenticated": False})
 
 css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
-app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css)
+app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css, suppress_callback_exceptions=True)
 
-# Describe App Layout
-app.layout = html.Div([
-    # Main content wrapper with flexible height
-    html.Div([
-        # Header
-        html.Div(
-            html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
-            style={"backgroundColor": 'white', "padding": "15px"}
-        ),
-        # AUTH0 CHECK -- TEST
-        html.Div([
-            html.Div(id='user-info', className="mb-2"),
-            html.A(
-                html.Button("Login", className="btn btn-primary"), 
-                href="/login"),
-            html.A(
-                html.Button("Logout", className="btn btn-outline-secondary btn-sm"), 
-                href="/logout")
-        ], className="col-3 text-end"),
-        # Tab content container
-        html.Div([
-            html.Br(),
-            # Give the tabs a unique ID that all components can access
-            dcc.Tabs(id='main-tabs', value='dataset-tab', children=[
-                dataset_layout,
-                stats_layout,
-                joins_layout,
-                map_layout,
-                upload_layout,
-                download_layout,
-            ], className="mb-4") 
-        ], className="col-8 mx-auto", style={"minHeight": "calc(100vh - 200px)"})
-    ], style={"flex": "1 0 auto"}),
-    
-    # Footer that stays at the bottom
-    html.Footer(
-        html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
-        style={
-            "backgroundColor": "#f5f5f5", 
-            "color": "#e3e3e3", 
-            "padding": "20px", 
-            "width": "100%",
-            "marginTop": "40px"
-        }
-    )
-], style={
-    "background-color": "#e5ecf6", 
-    "minHeight": "100vh",
-    "display": "flex",
-    "flexDirection": "column"
-}) 
+def serve_layout():
+    if 'user' in session: # Authenticated layout
+        return html.Div([
+            # Main content wrapper with flexible height
+            html.Div([
+                # Header
+                html.Div(
+                    html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
+                    style={"backgroundColor": 'white', "padding": "15px"}
+                ),
+                # AUTH0 CHECK -- TEST
+                html.Div([
+                    html.Div(id='user-info', className="mb-2"),
+                    html.A(
+                        html.Button("Login", className="btn btn-primary"), 
+                        href="/login"),
+                    html.A(
+                        html.Button("Logout", className="btn btn-outline-secondary btn-sm"), 
+                        href="/logout")
+                ], className="col-3 text-end"),
+                # Tab content container
+                html.Div([
+                    html.Br(),
+                    # Give the tabs a unique ID that all components can access
+                    dcc.Tabs(id='main-tabs', value='map-tab', children=[
+                        map_layout,
+                        dataset_layout,
+                        stats_layout,
+                        joins_layout,
+                        upload_layout,
+                        download_layout,
+                    ], className="mb-4") 
+                ], className="col-8 mx-auto", style={"minHeight": "calc(100vh - 200px)"})
+            ], style={"flex": "1 0 auto"}),
+            
+            # Footer that stays at the bottom
+            html.Footer(
+                html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
+                style={
+                    "backgroundColor": "#f5f5f5", 
+                    "color": "#e3e3e3", 
+                    "padding": "20px", 
+                    "width": "100%",
+                    "marginTop": "40px"
+                }
+            )
+        ], style={
+            "background-color": "#e5ecf6", 
+            "minHeight": "100vh",
+            "display": "flex",
+            "flexDirection": "column"
+        }) 
+    else: # Not authenticated
+        return html.Div([
+            # Header
+            html.Div(
+                html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
+                style={"backgroundColor": 'white', "padding": "15px"}
+            ),
+            # Login content
+            html.Div([
+                html.Div([
+                    html.H2("Welcome to Sork Lab Dashboard", className="text-center"),
+                    html.P("Please log in to access the dashboard features.", className="text-center"),
+                    html.Div([
+                        html.A(
+                            html.Button("Login", className="btn btn-primary"),
+                            href="/login",
+                            className="d-block mx-auto",
+                            style={"width": "fit-content"}
+                        )
+                    ], className="text-center")
+                ], className="p-5 bg-white rounded shadow")
+            ], className="col-6 mx-auto mt-5"),
+
+            # Maps tab
+            html.Div([
+                html.Br(), 
+                map_layout
+            ], className="p-4 bgwhite rounded shadow mt-5", style={
+                "width": "90%", 
+                "margin": "0 auto"
+            }), 
+
+            # Footer that stays at the bottom
+            html.Footer(
+                html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
+                style={
+                    "backgroundColor": "#f5f5f5", 
+                    "color": "#e3e3e3", 
+                    "padding": "20px", 
+                    "width": "100%",
+                    "marginTop": "40px"
+                }
+            )
+        ], style={
+            "background-color": "#e5ecf6", 
+            "minHeight": "100vh",
+            "display": "flex",
+            "flexDirection": "column"
+        })
+        
+
+app.layout = serve_layout
+
 
 @app.callback(
     Output('user-info', 'children'),
