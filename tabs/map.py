@@ -12,7 +12,9 @@ map_table = os.getenv("MAP_TABLE")
 
 # Create a layout for the map tab
 map_layout = dcc.Tab(
-    [
+    id="maps-tab",
+    value="map-tab",
+    children=[
         html.Br(),
         html.H4("Maternal Tree Locations", style={"marginBottom": "20px"}),
         
