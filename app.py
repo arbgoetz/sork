@@ -40,12 +40,17 @@ def login():
 
 @server.route('/callback')
 def callback_handling():
-    token = auth0.authorize_access_token()
-    nonce = session.get('nonce')
-    userinfo = auth0.parse_id_token(token, nonce=nonce)
-    session['user'] = userinfo
-    session.pop('nonce', None)
-    return redirect('/')
+    try:
+        token = auth0.authorize_access_token()
+        nonce = session.get('nonce')
+        userinfo = auth0.parse_id_token(token, nonce=nonce)
+        session['user'] = userinfo
+        session.pop('nonce', None)
+        return redirect('/')
+    except Exception as e:
+        print(f'Auth error: {e}')
+        return redirect('/login')
+
 
 @server.route('/logout')
 def logout():
