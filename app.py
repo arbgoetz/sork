@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from flask import Flask, redirect, session, jsonify, request
 from authlib.integrations.flask_client import OAuth
 from urllib.parse import parse_qs
+from cache_config import cache
 
 load_dotenv()
 
@@ -74,10 +75,17 @@ def unauthorized():
 css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
 app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css, suppress_callback_exceptions=True)
 
+cache.init_app(server, config={
+    'CACHE_TYPE': 'filesystem',
+    'CACHE_DIR': '/tmp',
+    'CACHE_THRESHOLD': 100
+})
+
 def serve_layout():
 
     dcc.Location(id='url', refresh=False)
-    dcc.Store(id="joined-dataset-store", storage_type="memory"),
+    dcc.Store(id='joined-dataset-store'),
+    dcc.Store(id="cached-data-key")
 
     if 'user' in session: # Authenticated layout
         return html.Div([

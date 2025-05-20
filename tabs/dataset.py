@@ -10,9 +10,15 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 import plotly.express as px
 import json
+import uuid
+from cache_config import cache
 
 # Load environment variables
 load_dotenv()
+
+@cache.memoize(timeout=3600)
+def store_large_df(key, df_dict):
+    cache.set(key, df_dict, timeout=3600)
 
 # Table Options
 table_options = os.getenv("TABLE_OPTIONS").split(",")
@@ -118,7 +124,7 @@ joins_layout_dataset = html.Div([
                         id="row-limit-input",
                         type="number",
                         min=1,
-                        max=10000,
+                        max=100000,
                         value=1000,
                         style={"width": "100px"}
                     ),
@@ -198,6 +204,7 @@ dataset_layout = dcc.Tab(
         dcc.Store(id="dataset-tab-active", data=False),
         # Store joined dataset
         dcc.Store(id="joined-dataset-store", storage_type="local"),
+        dcc.Store(id="cached-data-key"),
         html.Br(),
         html.H4("Option 1: Join two existing tables", style={"marginBottom": "20px"}),
         # Placeholder message
@@ -434,15 +441,23 @@ def toggle_generate_button(x_var, y_var):
     State('x_variable_dropdown', 'value'),
     State('y_variable_dropdown', 'value'),
     State('row_count', 'value'),
+    State('joined-dataset-store', 'data'),
     prevent_initial_call=True
 )
-def generate_figure(n_clicks, selected_table, x_var, y_var, row_count):
+def generate_figure(n_clicks, selected_table, x_var, y_var, row_count, joined_data):
     if not n_clicks or n_clicks == 0 or selected_table is None or x_var is None or y_var is None:
         return [], {"display": "none"}
     
-    col1, col2 = x_var, y_var
-    query = f"SELECT TOP {row_count} [{col1}], [{col2}] FROM [dbo].[{selected_table}]"
-    df = fetch_data_from_sql(query)[[col1, col2]].dropna()
+    # Generate different data frame if the joined one is stored
+    if joined_data:
+        df = pd.DataFrame(joined_data)[[x_var, y_var]].dropna()
+    elif selected_table:
+        col1, col2 = x_var, y_var
+        query = f"SELECT TOP {row_count} [{col1}], [{col2}] FROM [dbo].[{selected_table}]"
+        df = fetch_data_from_sql(query)[[col1, col2]].dropna()
+    else:
+        return [], {"display": "none"}
+    
     num1, num2 = is_numeric_dtype(df[col1]), is_numeric_dtype(df[col2])
     
     if num1 and num2:
@@ -707,8 +722,10 @@ def execute_join(n_clicks, first_table, join_type, second_table, first_key, seco
 
         # Convert dataframe to dict for storage
         dataset_dict = result_df.to_dict('records')
+        data_key = str(uuid.uuid4())
+        store_large_df(data_key, dataset_dict)
         
-        return {"display": "block"}, {"display": "none"}, formatted_query, table, stats_text, "", dataset_dict
+        return {"display": "block"}, {"display": "none"}, formatted_query, table, stats_text, "", data_key
     
     except Exception as e:
         error_message = str(e)

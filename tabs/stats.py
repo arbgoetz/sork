@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 import dash_bootstrap_components as dbc
 from dotenv import load_dotenv
 import os
+from cache_config import cache
 
 # Load environment variables
 load_dotenv()
@@ -257,17 +258,29 @@ def update_variable_options(selected_table):
     [Input("run-lr-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("lr-x-variable", "value"),
-     State("lr-y-variable", "value")],
+     State("lr-y-variable", "value"), 
+     State("cached-data-key", "data")],
+     State("use-joined-flag", "data"),
     prevent_initial_call=True
 )
-def generate_linear_regression(n_clicks, selected_table, x_var, y_var):
+def generate_linear_regression(n_clicks, selected_table, x_var, y_var, cache_key, use_joined):
     if n_clicks is None or not selected_table or not x_var or not y_var:
         return html.Div()
     
     try:
-        # Fetch the data
-        query = f"SELECT [{x_var}], [{y_var}] FROM [dbo].[{selected_table}] WHERE [{x_var}] IS NOT NULL AND [{y_var}] IS NOT NULL"
-        df = fetch_data_from_sql(query)
+        # If join, use cached data
+        if use_joined and cache_key:
+            cached_df = cache.get(cache_key)
+            if cached_df is None:
+                return html.Div([
+                    html.H5("Cache Miss", style={"color": "red"}),
+                    html.P("Cached dataset not found. Please re-run the join or reload data.")
+                ])
+            df = cached_df[[x_var, y_var]].dropna()
+        else:
+            # Fetch the data
+            query = f"SELECT [{x_var}], [{y_var}] FROM [dbo].[{selected_table}] WHERE [{x_var}] IS NOT NULL AND [{y_var}] IS NOT NULL"
+            df = fetch_data_from_sql(query)
         
         # Check if we have enough data
         if len(df) < 2:
@@ -538,18 +551,24 @@ def generate_pca(n_clicks, selected_table, variables, dimensions):
     Output("summary-output", "children", allow_duplicate=True),
     [Input("run-summary-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
-     State("summary-variable", "value")],
+     State("summary-variable", "value"),
+     State("cached-data-key", "data")],
     State("use-joined-flag", "data"),
-    State("joined-dataset-store", "data"),
     prevent_initial_call=True
 )
-def generate_summary_statistics(n_clicks, selected_table, variable, use_joined, joined_data):
+def generate_summary_statistics(n_clicks, selected_table, variable, cache_key, use_joined):
     if n_clicks is None or not selected_table or not variable:
         return html.Div()
     
     try:
-        if use_joined and joined_data:
-            df = pd.DataFrame(joined_data)
+        if use_joined and cache_key:
+            cached_df = cache.get(cache_key)
+            if cached_df is None:
+                return html.Div([
+                    html.H5("Cache Miss", style={"color": "red"}),
+                    html.P("Cached dataset not found. Please re-run the join or reload data.")
+                ])
+            df = cached_df
             if variable not in df.columns:
                 return html.Div([
                     html.H5("Column Not Found", style={"color": "red"}),
@@ -560,104 +579,104 @@ def generate_summary_statistics(n_clicks, selected_table, variable, use_joined, 
             query = f"SELECT [{variable}] FROM [dbo].[{selected_table}] WHERE [{variable}] IS NOT NULL"
             df = fetch_data_from_sql(query)
             
-            # Check if we have enough data
-            if len(df) < 1:
-                return html.Div([
-                    html.H5("Insufficient Data", style={"color": "red"}),
-                    html.P("No valid data points for summary statistics.")
-                ])
-            
-            # Calculate statistics
-            data = df[variable]
-            summary = {
-                'Count': len(data),
-                'Mean': data.mean(),
-                'Median': data.median(),
-                'Standard Deviation': data.std(),
-                'Minimum': data.min(),
-                'Maximum': data.max(),
-                '25th Percentile': data.quantile(0.25),
-                '75th Percentile': data.quantile(0.75),
-                'IQR': data.quantile(0.75) - data.quantile(0.25),
-                'Skewness': data.skew(),
-                'Kurtosis': data.kurtosis()
-            }
-            
-            # Create box plot
-            fig_box = go.Figure()
-            fig_box.add_trace(go.Box(
-                y=data,
-                name=variable,
-                boxpoints='all',
-                jitter=0.3,
-                pointpos=-1.8,
-                marker=dict(
-                    color='blue',
-                    opacity=0.6,
-                    size=4
-                ),
-                line=dict(color='darkblue')
-            ))
-            
-            fig_box.update_layout(
-                title=f"Box Plot for {variable}",
-                yaxis_title=variable,
-                height=400,
-                paper_bgcolor="#e5ecf6",
-                plot_bgcolor="#f9f9f9",
-                margin=dict(l=40, r=40, t=40, b=40)
-            )
-            
-            # Create histogram
-            fig_hist = go.Figure()
-            fig_hist.add_trace(go.Histogram(
-                x=data,
-                histnorm='probability density',
-                name=variable,
-                marker=dict(color='darkblue')
-            ))
-            
-            # Add mean and median lines
-            fig_hist.add_vline(x=summary['Mean'], line_dash="solid", line_color="red", 
-                            annotation_text="Mean", annotation_position="top right")
-            fig_hist.add_vline(x=summary['Median'], line_dash="dash", line_color="green", 
-                            annotation_text="Median", annotation_position="top left")
-            
-            fig_hist.update_layout(
-                title=f"Distribution of {variable}",
-                xaxis_title=variable,
-                yaxis_title="Density",
-                height=400,
-                paper_bgcolor="#e5ecf6",
-                plot_bgcolor="#f9f9f9",
-                margin=dict(l=40, r=40, t=40, b=40)
-            )
-            
-            # Create summary statistics table
-            stats_table = html.Div([
-                html.H5("Summary Statistics", style={"marginTop": "20px"}),
-                html.Table([
-                    html.Thead(
-                        html.Tr([
-                            html.Th("Statistic", style={"padding": "8px", "textAlign": "left", "borderBottom": "1px solid #ddd"}),
-                            html.Th("Value", style={"padding": "8px", "textAlign": "left", "borderBottom": "1px solid #ddd"})
-                        ])
-                    ),
-                    html.Tbody([
-                        html.Tr([
-                            html.Td(stat, style={"padding": "8px", "textAlign": "left", "borderBottom": "1px solid #ddd"}),
-                            html.Td(f"{value:.6f}" if isinstance(value, float) else f"{value}", 
-                                    style={"padding": "8px", "textAlign": "left", "borderBottom": "1px solid #ddd"})
-                        ]) for stat, value in summary.items()
-                    ])
-                ], style={"borderCollapse": "collapse", "width": "100%", "marginBottom": "20px"})
-            ])
-            
+        # Check if we have enough data
+        if len(df) < 1:
             return html.Div([
-                dcc.Graph(figure=fig_box, style={"marginBottom": "20px"}),
-                dcc.Graph(figure=fig_hist, style={"marginBottom": "20px"}),
-                stats_table
+                html.H5("Insufficient Data", style={"color": "red"}),
+                html.P("No valid data points for summary statistics.")
             ])
+        
+        # Calculate statistics
+        data = df[variable]
+        summary = {
+            'Count': len(data),
+            'Mean': data.mean(),
+            'Median': data.median(),
+            'Standard Deviation': data.std(),
+            'Minimum': data.min(),
+            'Maximum': data.max(),
+            '25th Percentile': data.quantile(0.25),
+            '75th Percentile': data.quantile(0.75),
+            'IQR': data.quantile(0.75) - data.quantile(0.25),
+            'Skewness': data.skew(),
+            'Kurtosis': data.kurtosis()
+        }
+        
+        # Create box plot
+        fig_box = go.Figure()
+        fig_box.add_trace(go.Box(
+            y=data,
+            name=variable,
+            boxpoints='all',
+            jitter=0.3,
+            pointpos=-1.8,
+            marker=dict(
+                color='blue',
+                opacity=0.6,
+                size=4
+            ),
+            line=dict(color='darkblue')
+        ))
+        
+        fig_box.update_layout(
+            title=f"Box Plot for {variable}",
+            yaxis_title=variable,
+            height=400,
+            paper_bgcolor="#e5ecf6",
+            plot_bgcolor="#f9f9f9",
+            margin=dict(l=40, r=40, t=40, b=40)
+        )
+        
+        # Create histogram
+        fig_hist = go.Figure()
+        fig_hist.add_trace(go.Histogram(
+            x=data,
+            histnorm='probability density',
+            name=variable,
+            marker=dict(color='darkblue')
+        ))
+        
+        # Add mean and median lines
+        fig_hist.add_vline(x=summary['Mean'], line_dash="solid", line_color="red", 
+                        annotation_text="Mean", annotation_position="top right")
+        fig_hist.add_vline(x=summary['Median'], line_dash="dash", line_color="green", 
+                        annotation_text="Median", annotation_position="top left")
+        
+        fig_hist.update_layout(
+            title=f"Distribution of {variable}",
+            xaxis_title=variable,
+            yaxis_title="Density",
+            height=400,
+            paper_bgcolor="#e5ecf6",
+            plot_bgcolor="#f9f9f9",
+            margin=dict(l=40, r=40, t=40, b=40)
+        )
+        
+        # Create summary statistics table
+        stats_table = html.Div([
+            html.H5("Summary Statistics", style={"marginTop": "20px"}),
+            html.Table([
+                html.Thead(
+                    html.Tr([
+                        html.Th("Statistic", style={"padding": "8px", "textAlign": "left", "borderBottom": "1px solid #ddd"}),
+                        html.Th("Value", style={"padding": "8px", "textAlign": "left", "borderBottom": "1px solid #ddd"})
+                    ])
+                ),
+                html.Tbody([
+                    html.Tr([
+                        html.Td(stat, style={"padding": "8px", "textAlign": "left", "borderBottom": "1px solid #ddd"}),
+                        html.Td(f"{value:.6f}" if isinstance(value, float) else f"{value}", 
+                                style={"padding": "8px", "textAlign": "left", "borderBottom": "1px solid #ddd"})
+                    ]) for stat, value in summary.items()
+                ])
+            ], style={"borderCollapse": "collapse", "width": "100%", "marginBottom": "20px"})
+        ])
+        
+        return html.Div([
+            dcc.Graph(figure=fig_box, style={"marginBottom": "20px"}),
+            dcc.Graph(figure=fig_hist, style={"marginBottom": "20px"}),
+            stats_table
+        ])
         
     except Exception as e:
         return html.Div([
@@ -668,11 +687,24 @@ def generate_summary_statistics(n_clicks, selected_table, variable, use_joined, 
 @callback(
     Output("use-joined-flag", "data"),
     Output("joined-dataset-status", "children"),
+    Output("use-joined-button", "children"),
     Input("use-joined-button", "n_clicks"),
     State("joined-dataset-store", "data"),
+    State("use-joined-flag", "data"),
     prevent_initial_call=True
 )
-def enable_joined_dataset(n_clicks, joined_data):
+def enable_joined_dataset(n_clicks, joined_data, current_flag):
     if joined_data is None:
-        return False, "No joined dataset found."
-    return True, "Joined dataset enabled for analysis."
+        return False, "No joined dataset found.", "Use joined dataset"
+    if current_flag is None:
+        current_flag = False
+
+    new_flag = not current_flag
+    if new_flag:
+        label = "Disable Joined Dataset"
+        status_message = "Joined dataset enabled for analysis."
+    else:
+        label = "Use Joined Dataset"
+        status_message = "Joined dataset disabled."
+
+    return new_flag, status_message, label
