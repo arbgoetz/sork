@@ -12,4 +12,10 @@ __pycache__/
 .DS_Store
 
 # QPLAD Management Files
-QPLAD_data_management
+QPLAD_data_management/
+
+# Locations Information
+california_counties.geojson
+
+# Test Folder
+tests/
