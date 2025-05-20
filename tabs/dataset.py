@@ -206,22 +206,9 @@ dataset_layout = dcc.Tab(
         # Store joined dataset
         dcc.Store(id="joined-dataset-store", storage_type="local"),
         dcc.Store(id="cached-data-key"),
-        html.Br(),
-        html.H4("Option 1: Join two existing tables", style={"marginBottom": "20px"}),
-        # Placeholder message
-        html.Div(
-            html.H5("Select tables and join parameters to start", 
-                   style={"textAlign": "center", "marginTop": "10px", "color": "#666"}),
-            id="joins-placeholder"
-        ),
-
-        # Combine dataset and joins layouts
-        # Main container for the join operation
-        joins_layout_dataset,
-        html.Div(id="join-error-message", style={"color": "red", "marginTop": "20px", "fontWeight": "bold"}),
 
         html.Br(),
-        html.H4("Option 2: Select an existing table", style={"marginBottom": "20px"}),
+        html.H4("Table View and Figure Generation", style={"marginBottom": "20px"}),
         dcc.Dropdown(table_options, id="dataset_dropdown", placeholder="Table Options"),
         # Column checklist
         html.Div([
@@ -290,7 +277,21 @@ dataset_layout = dcc.Tab(
             dcc.Loading(dcc.Graph(id="figure_graph"), type="default")
         ]),
         # Footer spacer
-        html.Div(style={"height": "50px", "backgroundColor": "#e5ecf6", "width": "100%", "marginTop": "10px", "borderTop": "1px solid #d1d1d1", "borderRadius": "0 0 5px 5px"})
+        html.Div(style={"height": "50px", "backgroundColor": "#e5ecf6", "width": "100%", "marginTop": "10px", "borderTop": "1px solid #d1d1d1", "borderRadius": "0 0 5px 5px"}),
+
+        html.Br(),
+        html.H4("Custom Table Joins", style={"marginBottom": "20px"}),
+        # Placeholder message
+        html.Div(
+            html.H5("Select tables and join parameters to start", 
+                   style={"textAlign": "center", "marginTop": "10px", "color": "#666"}),
+            id="joins-placeholder"
+        ),
+
+        # Combine dataset and joins layouts
+        # Main container for the join operation
+        joins_layout_dataset,
+        html.Div(id="join-error-message", style={"color": "red", "marginTop": "20px", "fontWeight": "bold"}),
     ]
 )
 
@@ -442,17 +443,14 @@ def toggle_generate_button(x_var, y_var):
     State('x_variable_dropdown', 'value'),
     State('y_variable_dropdown', 'value'),
     State('row_count', 'value'),
-    State('joined-dataset-store', 'data'),
     prevent_initial_call=True
 )
-def generate_figure(n_clicks, selected_table, x_var, y_var, row_count, joined_data):
+def generate_figure(n_clicks, selected_table, x_var, y_var, row_count):
     if not n_clicks or n_clicks == 0 or selected_table is None or x_var is None or y_var is None:
         return [], {"display": "none"}
     
     # Generate different data frame if the joined one is stored
-    if joined_data:
-        df = pd.DataFrame(joined_data)[[x_var, y_var]].dropna()
-    elif selected_table:
+    if selected_table:
         col1, col2 = x_var, y_var
         query = f"SELECT TOP {row_count} [{col1}], [{col2}] FROM [dbo].[{selected_table}]"
         df = fetch_data_from_sql(query)[[col1, col2]].dropna()

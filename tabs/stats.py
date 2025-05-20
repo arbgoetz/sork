@@ -296,7 +296,7 @@ def generate_linear_regression(n_clicks, selected_table, x_var, y_var, joined_da
             df = fetch_data_from_sql(query)
         
         # Check if we have enough data
-        if len(df) < 2:
+        if df is None or df.empty:
             return html.Div([
                 html.H5("Insufficient Data", style={"color": "red"}),
                 html.P("Not enough valid data points for regression analysis.")
