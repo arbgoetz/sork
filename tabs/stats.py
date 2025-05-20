@@ -259,18 +259,18 @@ def update_variable_options(selected_table):
     [State("stats-table-dropdown", "value"),
      State("lr-x-variable", "value"),
      State("lr-y-variable", "value"), 
-     State("cached-data-key", "data")],
+     State("joined-dataset-store", "data")],
      State("use-joined-flag", "data"),
     prevent_initial_call=True
 )
-def generate_linear_regression(n_clicks, selected_table, x_var, y_var, cache_key, use_joined):
+def generate_linear_regression(n_clicks, selected_table, x_var, y_var, joined_data, use_joined):
     if n_clicks is None or not selected_table or not x_var or not y_var:
         return html.Div()
     
     try:
         # If join, use cached data
-        if use_joined and cache_key:
-            cached_df = cache.get(cache_key)
+        if use_joined and joined_data:
+            cached_df = pd.DataFrame(cache.get(joined_data))
             if cached_df is None:
                 return html.Div([
                     html.H5("Cache Miss", style={"color": "red"}),
@@ -408,18 +408,30 @@ def generate_linear_regression(n_clicks, selected_table, x_var, y_var, cache_key
     [Input("run-pca-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("pca-variables", "value"),
-     State("pca-dimensions", "value")],
+     State("pca-dimensions", "value"),
+     State("joined-dataset-store", "data")],
+    State("use-joined-flag", "data"),
     prevent_initial_call=True
 )
-def generate_pca(n_clicks, selected_table, variables, dimensions):
+def generate_pca(n_clicks, selected_table, variables, dimensions, joined_data, use_joined):
     if n_clicks is None or not selected_table or not variables or len(variables) < 2:
         return html.Div()
     
     try:
         # Fetch the data
-        columns = ", ".join([f"[{var}]" for var in variables])
-        query = f"SELECT {columns} FROM [dbo].[{selected_table}]"
-        df = fetch_data_from_sql(query)
+        # If join, use cached data
+        if use_joined and joined_data:
+            cached_df = pd.DataFrame(cache.get(joined_data))
+            if cached_df is None:
+                return html.Div([
+                    html.H5("Cache Miss", style={"color": "red"}),
+                    html.P("Cached dataset not found. Please re-run the join or reload data.")
+                ])
+            df = cached_df
+        else:
+            columns = ", ".join([f"[{var}]" for var in variables])
+            query = f"SELECT {columns} FROM [dbo].[{selected_table}]"
+            df = fetch_data_from_sql(query)
         
         # Drop rows with NaN values
         df = df.dropna()
@@ -552,17 +564,17 @@ def generate_pca(n_clicks, selected_table, variables, dimensions):
     [Input("run-summary-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("summary-variable", "value"),
-     State("cached-data-key", "data")],
+     State("joined-dataset-store", "data")],
     State("use-joined-flag", "data"),
     prevent_initial_call=True
 )
-def generate_summary_statistics(n_clicks, selected_table, variable, cache_key, use_joined):
+def generate_summary_statistics(n_clicks, selected_table, variable, joined_data, use_joined):
     if n_clicks is None or not selected_table or not variable:
         return html.Div()
     
     try:
-        if use_joined and cache_key:
-            cached_df = cache.get(cache_key)
+        if use_joined and joined_data:
+            cached_df = pd.DataFrame(cache.get(joined_data))
             if cached_df is None:
                 return html.Div([
                     html.H5("Cache Miss", style={"color": "red"}),
@@ -703,6 +715,7 @@ def enable_joined_dataset(n_clicks, joined_data, current_flag):
     if new_flag:
         label = "Disable Joined Dataset"
         status_message = "Joined dataset enabled for analysis."
+        print(f'Cache key: {joined_data}')
     else:
         label = "Use Joined Dataset"
         status_message = "Joined dataset disabled."

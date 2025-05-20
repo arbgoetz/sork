@@ -18,6 +18,7 @@ load_dotenv()
 
 @cache.memoize(timeout=3600)
 def store_large_df(key, df_dict):
+    print("Storing to cache with key:", key)
     cache.set(key, df_dict, timeout=3600)
 
 # Table Options
