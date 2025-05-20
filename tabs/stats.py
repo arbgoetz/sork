@@ -240,17 +240,30 @@ def get_numeric_columns(table_name):
      Output("lr-y-variable", "options"),
      Output("pca-variables", "options"),
      Output("summary-variable", "options")],
-    [Input("stats-table-dropdown", "value")]
+    [Input("stats-table-dropdown", "value")], 
+    State("joined-dataset-store", "data")
 )
-def update_variable_options(selected_table):
+def update_variable_options(selected_table, joined_data):
     if not selected_table:
         empty_options = []
         return empty_options, empty_options, empty_options, empty_options
     
-    numeric_cols = get_numeric_columns(selected_table)
-    options = [{"label": col, "value": col} for col in numeric_cols]
+    try:
+        if selected_table == "__joined__" and joined_data:
+            df = pd.DataFrame(cache.get(joined_data))
+        else:
+            df = fetch_data_from_sql(f"SELECT TOP 100 * FROM [dbo].[{selected_table}]")
+
+        if df is None or df.empty:
+            return empty_options, empty_options, empty_options, empty_options
     
-    return options, options, options, options
+        numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        options = [{"label": col, "value": col} for col in numeric_cols]
+        
+        return options, options, options, options
+    except Exception as e:
+        print(f"Error fetching variables: {e}")
+        return [], []
 
 # Linear Regression Callback
 @callback(
@@ -276,7 +289,7 @@ def generate_linear_regression(n_clicks, selected_table, x_var, y_var, joined_da
                     html.H5("Cache Miss", style={"color": "red"}),
                     html.P("Cached dataset not found. Please re-run the join or reload data.")
                 ])
-            df = cached_df[[x_var, y_var]].dropna()
+            df = cached_df.dropna()
         else:
             # Fetch the data
             query = f"SELECT [{x_var}], [{y_var}] FROM [dbo].[{selected_table}] WHERE [{x_var}] IS NOT NULL AND [{y_var}] IS NOT NULL"
@@ -721,3 +734,29 @@ def enable_joined_dataset(n_clicks, joined_data, current_flag):
         status_message = "Joined dataset disabled."
 
     return new_flag, status_message, label
+
+@callback(
+    Output("stats-table-dropdown", "value"),
+    Input("use-joined-flag", "data"),
+    State("stats-table-dropdown", "options"),
+    prevent_initial_call=True
+)
+def update_dropdown_on_join_flag(use_joined, table_options):
+    if use_joined:
+        # Set a special placeholder value to signal "joined dataset"
+        # Add cache key to table_options
+        return "__joined__"
+    return dash.no_update
+
+@callback(
+    Output("stats-table-dropdown", "options"),
+    Input("use-joined-flag", "data"),
+    State("joined-dataset-store", "data")
+)
+def update_table_options(use_joined, joined_data):
+    options = [{"label": table, "value": table} for table in table_options]
+    # If the joined dataset is available, add it to options
+    if use_joined and joined_data:
+        options.insert(0, {"label": "Joined Dataset", "value": "__joined__"})
+
+    return options
