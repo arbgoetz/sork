@@ -77,6 +77,7 @@ app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css, s
 def serve_layout():
 
     dcc.Location(id='url', refresh=False)
+    dcc.Store(id="joined-dataset-store", storage_type="memory"),
 
     if 'user' in session: # Authenticated layout
         return html.Div([
