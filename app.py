@@ -9,8 +9,10 @@ from tabs.joins import joins_layout
 import os
 import secrets
 from dotenv import load_dotenv
-from flask import Flask, redirect, session, jsonify
+from flask import Flask, redirect, session, jsonify, request
 from authlib.integrations.flask_client import OAuth
+from urllib.parse import parse_qs
+from cache_config import cache
 
 load_dotenv()
 
@@ -40,12 +42,17 @@ def login():
 
 @server.route('/callback')
 def callback_handling():
-    token = auth0.authorize_access_token()
-    nonce = session.get('nonce')
-    userinfo = auth0.parse_id_token(token, nonce=nonce)
-    session['user'] = userinfo
-    session.pop('nonce', None)
-    return redirect('/')
+    try:
+        token = auth0.authorize_access_token()
+        nonce = session.get('nonce')
+        userinfo = auth0.parse_id_token(token, nonce=nonce)
+        session['user'] = userinfo
+        session.pop('nonce', None)
+        return redirect('/')
+    except Exception as e:
+        print(f'Auth error: {e}')
+        return redirect('/unauthorized')
+
 
 @server.route('/logout')
 def logout():
@@ -56,16 +63,30 @@ def logout():
         f"client_id={os.getenv('AUTH0_CLIENT_ID')}"
     )
 
-@server.route('/is-authenticated')
-def is_authenticated():
-    if 'user' in session:
-        return jsonify({"authenticated": True, "user": session['user']})
-    return jsonify({"authenticated": False})
+@server.route('/unauthorized')
+def unauthorized():
+    session.clear()
+    return redirect(
+        f"https://{os.getenv('AUTH0_DOMAIN')}/v2/logout?"
+        f"returnTo=http://127.0.0.1:8050/?error=invalid_credentials&"
+        f"client_id={os.getenv('AUTH0_CLIENT_ID')}"
+    )
 
 css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
 app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css, suppress_callback_exceptions=True)
 
+cache.init_app(server, config={
+    'CACHE_TYPE': 'filesystem',
+    'CACHE_DIR': '/tmp',
+    'CACHE_THRESHOLD': 100
+})
+
 def serve_layout():
+
+    dcc.Location(id='url', refresh=False)
+    dcc.Store(id='joined-dataset-store'),
+    dcc.Store(id="cached-data-key")
+
     if 'user' in session: # Authenticated layout
         return html.Div([
             # Main content wrapper with flexible height
@@ -124,6 +145,11 @@ def serve_layout():
                 html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
                 style={"backgroundColor": 'white', "padding": "15px"}
             ),
+            # Errors
+            html.Div([
+                dcc.Location(id='url', refresh=False),
+                html.Div(id='error-message'),
+            ]),
             # Login content
             html.Div([
                 html.Div([
@@ -179,6 +205,18 @@ def display_user(tab):
     if 'user' in session:
         return f"Logged in as {session['user']['name']}"
     return "Not logged in"
+
+
+@app.callback(
+    Output('error-message', 'children'),
+    Input('url', 'search')
+)
+def display_error_message(search):
+    if search:
+        query_params = parse_qs(search.lstrip('?'))
+        if 'error' in query_params:
+            return html.Div("Login failed: Invalid username or password.", style={'color': 'red', 'textAlign': 'center', 'marginTop': '20px'})
+    return ""
 
 if __name__ == "__main__":
     app.run(debug=True)
