@@ -29,7 +29,7 @@ stat_test_options = [
 
 # Create the layout for the stats tab
 stats_layout = dcc.Tab(
-    label="Statistical Analysis",
+    label="Statistics",
     id="stats-tab",
     style={"padding": "15px"},
     children=[
@@ -289,7 +289,7 @@ def generate_linear_regression(n_clicks, selected_table, x_var, y_var, joined_da
                     html.H5("Cache Miss", style={"color": "red"}),
                     html.P("Cached dataset not found. Please re-run the join or reload data.")
                 ])
-            df = cached_df.dropna()
+            df = cached_df[[x_var, y_var]].dropna()
         else:
             # Fetch the data
             query = f"SELECT [{x_var}], [{y_var}] FROM [dbo].[{selected_table}] WHERE [{x_var}] IS NOT NULL AND [{y_var}] IS NOT NULL"

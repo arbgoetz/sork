@@ -197,7 +197,7 @@ joins_layout_dataset = html.Div([
 
 # Layout for Dataset Tab
 dataset_layout = dcc.Tab(
-    label="Dataset",
+    label="Tables",
     id="dataset-tab",
     style={"padding": "15px"},
     children=[
