@@ -12,7 +12,7 @@ import sqlalchemy
 from sqlalchemy import create_engine
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Table Options
 table_options = os.getenv("TABLE_OPTIONS").split(",")

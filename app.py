@@ -14,7 +14,7 @@ from authlib.integrations.flask_client import OAuth
 from urllib.parse import parse_qs
 from cache_config import cache
 
-load_dotenv()
+load_dotenv(override=True)
 
 # Initialize OAuth
 server = Flask(__name__)

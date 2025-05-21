@@ -7,7 +7,7 @@ import pandas as pd
 
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 table_options = os.getenv("TABLE_OPTIONS").split(',')
 

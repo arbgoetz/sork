@@ -7,7 +7,7 @@ import os
 from database import fetch_data_from_sql
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 map_table = os.getenv("MAP_TABLE")
 
 map_layout = dcc.Tab(
@@ -42,7 +42,7 @@ map_layout = dcc.Tab(
                     config={
                         'scrollZoom': True,
                         'displayModeBar': True,
-                        # Removed lasso and selection tools
+                        # Removed lasso tool since it's confusing to use
                         'modeBarButtonsToRemove': ['lasso2d']
                     }
                 ),
@@ -76,7 +76,7 @@ map_layout = dcc.Tab(
     style={"padding": "15px"}
 )
 
-# Combined callback to handle both map updates and click data
+# Callback to handle both map updates and click data
 @callback(
     [Output('california-map', 'figure'),
      Output('stored-click-data', 'data')],
@@ -126,7 +126,7 @@ def update_map_and_click_data(reset_clicks, clickData):
     # If reset button was clicked or initial load, return the figure with no click data
     return fig, None
 
-# Callback to display information about the clicked tree site
+# Display information about the clicked tree site
 @callback(
     Output('individual-tree-data', 'children'),
     [Input('stored-click-data', 'data')]

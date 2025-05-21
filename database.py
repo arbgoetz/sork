@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 def fetch_data_from_sql(query):
     """Fetch data from SQL Server using SQLAlchemy with PyODBC."""

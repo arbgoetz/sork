@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import os
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Get main table
 table_options = os.getenv("TABLE_OPTIONS", "").split(",")

@@ -14,7 +14,7 @@ import uuid
 from cache_config import cache
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 @cache.memoize(timeout=3600)
 def store_large_df(key, df_dict):
