@@ -5,13 +5,11 @@ from dotenv import load_dotenv
 from database import fetch_data_from_sql
 import pandas as pd
 
-
 # Load environment variables
 load_dotenv(override=True)
 
 CORE_TABLES={
     "db_main": "Growth/Survival",
-    "budburst_date1": "First Budburst Date",
     "budburst_detailed_all": "All Budburst Stages",
     "biomass_2021_combined_fordb_052224": "Biomass",
     "leaf_traits_2016": "Leaf traits",
@@ -52,7 +50,6 @@ joins_layout = dcc.Tab(
                                 style={"maxHeight": "200px", "overflowY": "auto", "padding": "10px", "backgroundColor": "#f9f9f9", "borderRadius": "5px"}),
                 ], id="join-table-columns-container", style={"display": "none", "marginBottom": "15px"}),
 
-
                 # Pick the maternal tree table columns
                 html.Div([
                     html.Div([
@@ -64,7 +61,6 @@ joins_layout = dcc.Tab(
                                 labelStyle={"display": "block", "marginBottom": "3px"},
                                 style={"maxHeight": "200px", "overflowY": "auto", "padding": "10px", "backgroundColor": "#f9f9f9", "borderRadius": "5px"}),
                 ], id="join-tree-table-columns-container", style={"display": "none", "marginBottom": "15px"}),
-
 
                 # Pick the garden climate variables
                 html.Div([
@@ -285,156 +281,125 @@ def handle_garden_select_buttons(select_all_clicks, deselect_all_clicks, current
 
 # Main execution callback - handles both validation and execution
 @callback(
-    [Output("join-tab-results-div", "style", allow_duplicate=True),
-     Output("join-tab-results-table", "children", allow_duplicate=True),
-     Output("join-tab-sql-query", "children", allow_duplicate=True),
-     Output("join-tab-results-stats", "children", allow_duplicate=True)],
+    [
+        Output("join-tab-results-div", "style", allow_duplicate=True),
+        Output("join-tab-results-table", "children", allow_duplicate=True),
+        Output("join-tab-sql-query", "children", allow_duplicate=True),
+        Output("join-tab-results-stats", "children", allow_duplicate=True),
+    ],
     [Input("join-tab-execute-button", "n_clicks")],
-    [State("join-tab-core-dropdown", "value"),
-     State("join-core-table-options", "value"),
-     State("join-tree-table-options", "value"),
-     State("join-garden-table-options", "value")],
-    prevent_initial_call=True
+    [
+        State("join-tab-core-dropdown", "value"),
+        State("join-core-table-options", "value"),
+        State("join-tree-table-options", "value"),
+        State("join-garden-table-options", "value"),
+    ],
+    prevent_initial_call=True,
 )
 def execute_join(n_clicks, core_table, core_table_vars, maternal_tree_vars, garden_climate_vars):
-    if n_clicks is None or n_clicks == 0:
-        return {"display": "none"}, [], "", ""
-    
-    # Validate that we have a core table and at least one set of variables from maternal or garden
-    if not core_table:
+    if not n_clicks or not core_table or (not maternal_tree_vars and not garden_climate_vars):
         return {"display": "none"}, [], "", ""
 
-    if not maternal_tree_vars and not garden_climate_vars:
-        return {"display": "none"}, [], "", ""
-    
-    # If we get here, we have a valid join - hide error and show results
     try:
-        # Build the SQL query with proper join logic
-        
-        # Determine required core columns based on table type
+        # 1) Required core columns
         if core_table == "leaf_traits_2016":
             required_core_cols = ["Accession", "Locality", "Site"]
+            garden_key_cols = {"Site"}
         else:
             required_core_cols = ["Accession", "Locality", "Year", "Site"]
-        
-        # Build core table column selection
-        core_cols_to_select = required_core_cols.copy()
-        if core_table_vars:
-            # Add user-selected columns that aren't already in required columns
-            for col in core_table_vars:
-                if col not in core_cols_to_select:
-                    core_cols_to_select.append(col)
-        
-        # Format core columns for SELECT
-        core_columns = ", ".join([f'core.[{col}]' for col in core_cols_to_select])
-        selected_columns = [core_columns]
-        
-        # Build joins and additional columns
-        joins = []
-        
-        # Maternal tree join if selected
-        if maternal_tree_vars:
-            maternal_columns = ", ".join([f'maternal.[{col}] AS maternal_{col}' for col in maternal_tree_vars])
-            selected_columns.append(maternal_columns)
-            
-            # Join condition with TRY_CAST for data type safety
-            maternal_join = f"""LEFT JOIN (
-        SELECT 
-            TRY_CAST(TRY_CAST("Accession" AS NUMERIC) AS INT) AS "Accession",
-            "Locality",
-            {", ".join([f'[{col}]' for col in maternal_tree_vars])}
-        FROM "{MATERNAL_TREE_TABLE}"
-    ) maternal
-    ON (
-        core."Accession" = maternal."Accession" AND
-        core."Locality" = maternal."Locality"
-    )"""
-            joins.append(maternal_join)
-        
-        # Garden climate join if selected
-        if garden_climate_vars:
-            garden_columns = ", ".join([f'garden.[{col}] AS garden_{col}' for col in garden_climate_vars])
-            selected_columns.append(garden_columns)
-            
-            # Different join conditions based on core table type
-            if core_table == "leaf_traits_2016":
-                # For leaf traits, only join on Site
-                garden_join = f"""LEFT JOIN (
-        SELECT 
-            "Site",
-            {", ".join([f'[{col}]' for col in garden_climate_vars])}
-        FROM "{GARDENS_TABLE}"
-    ) garden
-    ON (core."Site" = garden."Site")"""
-            else:
-                # For other tables, join on Year and Site with TRY_CAST
-                garden_join = f"""LEFT JOIN (
-        SELECT 
-            TRY_CAST(TRY_CAST("Year" AS NUMERIC) AS INT) AS "Year",
-            "Site",
-            {", ".join([f'[{col}]' for col in garden_climate_vars])}
-        FROM "{GARDENS_TABLE}"
-    ) garden
-    ON (core."Year" = garden."Year" AND core."Site" = garden."Site")"""
-            joins.append(garden_join)
-        
-        # Build the complete SQL query
-        sql_query = f"""SELECT DISTINCT {', '.join(selected_columns)}
-FROM (
-    SELECT
-        {', '.join([f'core.[{col}]' for col in core_cols_to_select])}
-    FROM "{core_table}" core
-    {chr(10).join(joins)}
-) q01"""
-        
-        # Execute the query
-        result_df = fetch_data_from_sql(sql_query)
-        
-        # Create the results table
-        table = dash_table.DataTable(
-            data=result_df.head(1000).to_dict('records'),
-            columns=[{'name': col, 'id': col} for col in result_df.columns],
-            page_size=15,
-            style_table={'overflowX': 'auto'},
-            style_cell={
-                'minWidth': '100px',
-                'maxWidth': '300px',
-                'overflow': 'hidden',
-                'textOverflow': 'ellipsis'
-            },
-            style_header={
-                'backgroundColor': 'rgb(230, 230, 230)',
-                'fontWeight': 'bold'
-            },
-            style_data_conditional=[
-                {
-                    'if': {'row_index': 'odd'},
-                    'backgroundColor': 'rgb(248, 248, 248)'
-                }
-            ],
-            filter_action="native",
-            sort_action="native"
-        )
-        
-        # Format the SQL query for display
-        formatted_query = html.Pre(sql_query, style={"margin": 0, "fontSize": "12px"})
-        
-        # Create stats
-        row_count = len(result_df)
-        stats_text = f"Showing {row_count} rows | {len(result_df.columns)} columns"
-        if maternal_tree_vars:
-            stats_text += f" | {len(maternal_tree_vars)} maternal variables"
-        if garden_climate_vars:
-            stats_text += f" | {len(garden_climate_vars)} garden variables"
-        
-        return {"display": "block"}, table, formatted_query, stats_text
-        
-    except Exception as e:
-        # If there's an error during execution, show it
-        error_msg = f"Error executing join: {str(e)}"
-        print(f"SQL Error: {error_msg}")  # For debugging
-        return {"display": "none"}, [], f"Error: {error_msg}", ""
+            garden_key_cols = {"Year", "Site"}
+        tree_key_cols = {"Accession", "Locality"}
 
+        # 2) Core SELECT
+        core_cols = required_core_cols[:]
+        if core_table_vars:
+            core_cols += [c for c in core_table_vars if c not in core_cols]
+        core_sel = ", ".join(f"core.[{c}]" for c in core_cols)
+        selected_clauses = [core_sel]
+
+        # 3) Clean out any key‐columns from the non‐core selections
+        safe_tree_vars   = [c for c in maternal_tree_vars   or [] if c not in tree_key_cols]
+        safe_garden_vars = [c for c in garden_climate_vars or [] if c not in garden_key_cols]
+
+        # 4) Maternal‐tree join
+        joins = []
+        if maternal_tree_vars:
+            # only add non‐key columns to SELECT
+            if safe_tree_vars:
+                tree_sel = ", ".join(
+                    f"maternal.[{c}] AS [maternal_{c.replace(' ', '_')}]"
+                    for c in safe_tree_vars
+                )
+                selected_clauses.append(tree_sel)
+
+            # build a subquery that SELECTs keys + only the safe vars
+            tree_cols = ["TRY_CAST(TRY_CAST([Accession] AS NUMERIC) AS INT) AS [Accession]",
+                         "[Locality]"] \
+                        + [f"[{c}]" for c in safe_tree_vars]
+            joins.append(f"""
+LEFT JOIN (
+  SELECT {', '.join(tree_cols)}
+  FROM [dbo].[{MATERNAL_TREE_TABLE}]
+) maternal
+  ON core.[Accession] = maternal.[Accession]
+ AND core.[Locality]  = maternal.[Locality]
+""".strip())
+
+        # 5) Garden‐climate join
+        if garden_climate_vars:
+            if safe_garden_vars:
+                garden_sel = ", ".join(
+                    f"garden.[{c}] AS [garden_{c.replace(' ', '_')}]"
+                    for c in safe_garden_vars
+                )
+                selected_clauses.append(garden_sel)
+
+            if core_table == "leaf_traits_2016":
+                garden_cols = ["[Site]"] + [f"[{c}]" for c in safe_garden_vars]
+                join_cond   = "core.[Site] = garden.[Site]"
+            else:
+                garden_cols = ["TRY_CAST(TRY_CAST([Year] AS NUMERIC) AS INT) AS [Year]",
+                               "[Site]"] + [f"[{c}]" for c in safe_garden_vars]
+                join_cond   = "core.[Year] = garden.[Year] AND core.[Site] = garden.[Site]"
+
+            joins.append(f"""
+LEFT JOIN (
+  SELECT {', '.join(garden_cols)}
+  FROM [dbo].[{GARDENS_TABLE}]
+) garden
+  ON {join_cond}
+""".strip())
+
+        # 6) Assemble & run
+        sql_query = f"""
+SELECT DISTINCT
+  {', '.join(selected_clauses)}
+FROM [dbo].[{core_table}] core
+{chr(10).join(joins)}
+""".strip()
+        result_df = fetch_data_from_sql(sql_query)
+
+        # 7) If nothing came back, hide and exit
+        if result_df is None or result_df.empty:
+            return {"display": "none"}, [], sql_query, ""
+
+        # 8) Build the table and stats
+        table = dash_table.DataTable(
+            data=result_df.head(1000).to_dict("records"),
+            columns=[{"name": c, "id": c} for c in result_df.columns],
+            page_size=15,
+            style_table={"overflowX": "auto"},
+        )
+        stats_text = f"{len(result_df)} rows | {len(core_cols)} core cols | " \
+                     f"{len(safe_tree_vars)} maternal cols | {len(safe_garden_vars)} garden cols"
+
+        return {"display": "block"}, table, sql_query, stats_text
+
+    except Exception as e:
+        err = f"Error executing join: {e}"
+        print("SQL Error:", err)
+        return {"display": "none"}, [], err, ""
+        
 # Reset results when any selection changes (but don't show error until execute is clicked)
 @callback(
     [Output("join-tab-results-div", "style", allow_duplicate=True)],
@@ -450,108 +415,109 @@ def reset_results_on_selection_change(core_vars, tree_vars, garden_vars):
 # Download functionality
 @callback(
     Output('download-join-tab-csv', 'data'),
-    [Input('download-join-tab-csv-button', 'n_clicks')],
-    [State("join-tab-core-dropdown", "value"),
-     State("join-core-table-options", "value"),
-     State("join-tree-table-options", "value"),
-     State("join-garden-table-options", "value")],
+    Input('download-join-tab-csv-button', 'n_clicks'),
+    State("join-tab-core-dropdown", "value"),
+    State("join-core-table-options", "value"),
+    State("join-tree-table-options", "value"),
+    State("join-garden-table-options", "value"),
     prevent_initial_call=True
 )
 def download_join_results(n_clicks, core_table, core_table_vars, maternal_tree_vars, garden_climate_vars):
-    if n_clicks is None or n_clicks == 0:
+    if not n_clicks:
         return dash.no_update
-    
+
     try:
-        # Use the same SQL generation logic as execute_join
-        
-        # Determine required core columns based on table type
+       # 1) Required core columns
         if core_table == "leaf_traits_2016":
             required_core_cols = ["Accession", "Locality", "Site"]
+            garden_key_cols = {"Site"}
         else:
             required_core_cols = ["Accession", "Locality", "Year", "Site"]
-        
-        # Build core table column selection
-        core_cols_to_select = required_core_cols.copy()
+            garden_key_cols = {"Year", "Site"}
+        tree_key_cols = {"Accession", "Locality"}
+
+        # 2) Core SELECT
+        core_cols = required_core_cols[:]
         if core_table_vars:
-            # Add user-selected columns that aren't already in required columns
-            for col in core_table_vars:
-                if col not in core_cols_to_select:
-                    core_cols_to_select.append(col)
-        
-        # Format core columns for SELECT
-        core_columns = ", ".join([f'core.[{col}]' for col in core_cols_to_select])
-        selected_columns = [core_columns]
-        
-        # Build joins and additional columns
+            core_cols += [c for c in core_table_vars if c not in core_cols]
+        core_sel = ", ".join(f"core.[{c}]" for c in core_cols)
+        selected_clauses = [core_sel]
+
+        # 3) Clean out any key‐columns from the non‐core selections
+        safe_tree_vars   = [c for c in maternal_tree_vars   or [] if c not in tree_key_cols]
+        safe_garden_vars = [c for c in garden_climate_vars or [] if c not in garden_key_cols]
+
+        # 4) Maternal‐tree join
         joins = []
-        
-        # Maternal tree join if selected
         if maternal_tree_vars:
-            maternal_columns = ", ".join([f'maternal.[{col}] AS maternal_{col}' for col in maternal_tree_vars])
-            selected_columns.append(maternal_columns)
-            
-            # Join condition with TRY_CAST for data type safety
-            maternal_join = f"""LEFT JOIN (
-        SELECT 
-            TRY_CAST(TRY_CAST("Accession" AS NUMERIC) AS INT) AS "Accession",
-            "Locality",
-            {", ".join([f'[{col}]' for col in maternal_tree_vars])}
-        FROM "{MATERNAL_TREE_TABLE}"
-    ) maternal
-    ON (
-        core."Accession" = maternal."Accession" AND
-        core."Locality" = maternal."Locality"
-    )"""
-            joins.append(maternal_join)
-        
-        # Garden climate join if selected
+            # only add non‐key columns to SELECT
+            if safe_tree_vars:
+                tree_sel = ", ".join(
+                    f"maternal.[{c}] AS [maternal_{c.replace(' ', '_')}]"
+                    for c in safe_tree_vars
+                )
+                selected_clauses.append(tree_sel)
+
+            # build a subquery that SELECTs keys + only the safe vars
+            tree_cols = ["TRY_CAST(TRY_CAST([Accession] AS NUMERIC) AS INT) AS [Accession]",
+                         "[Locality]"] \
+                        + [f"[{c}]" for c in safe_tree_vars]
+            joins.append(f"""
+LEFT JOIN (
+  SELECT {', '.join(tree_cols)}
+  FROM [dbo].[{MATERNAL_TREE_TABLE}]
+) maternal
+  ON core.[Accession] = maternal.[Accession]
+ AND core.[Locality]  = maternal.[Locality]
+""".strip())
+
+        # 5) Garden‐climate join
         if garden_climate_vars:
-            garden_columns = ", ".join([f'garden.[{col}] AS garden_{col}' for col in garden_climate_vars])
-            selected_columns.append(garden_columns)
-            
-            # Different join conditions based on core table type
+            if safe_garden_vars:
+                garden_sel = ", ".join(
+                    f"garden.[{c}] AS [garden_{c.replace(' ', '_')}]"
+                    for c in safe_garden_vars
+                )
+                selected_clauses.append(garden_sel)
+
             if core_table == "leaf_traits_2016":
-                # For leaf traits, only join on Site
-                garden_join = f"""LEFT JOIN (
-        SELECT 
-            "Site",
-            {", ".join([f'[{col}]' for col in garden_climate_vars])}
-        FROM "{GARDENS_TABLE}"
-    ) garden
-    ON (core."Site" = garden."Site")"""
+                garden_cols = ["[Site]"] + [f"[{c}]" for c in safe_garden_vars]
+                join_cond   = "core.[Site] = garden.[Site]"
             else:
-                # For other tables, join on Year and Site with TRY_CAST
-                garden_join = f"""LEFT JOIN (
-        SELECT 
-            TRY_CAST(TRY_CAST("Year" AS NUMERIC) AS INT) AS "Year",
-            "Site",
-            {", ".join([f'[{col}]' for col in garden_climate_vars])}
-        FROM "{GARDENS_TABLE}"
-    ) garden
-    ON (core."Year" = garden."Year" AND core."Site" = garden."Site")"""
-            joins.append(garden_join)
-        
-        # Build the complete SQL query (remove DISTINCT and limit for download)
-        sql_query = f"""SELECT {', '.join(selected_columns)}
-FROM (
-    SELECT
-        {', '.join([f'core.[{col}]' for col in core_cols_to_select])}
-    FROM "{core_table}" core
-    {chr(10).join(joins)}
-) q01"""
-        
-        # Execute the query and download
+                garden_cols = ["TRY_CAST(TRY_CAST([Year] AS NUMERIC) AS INT) AS [Year]",
+                               "[Site]"] + [f"[{c}]" for c in safe_garden_vars]
+                join_cond   = "core.[Year] = garden.[Year] AND core.[Site] = garden.[Site]"
+
+            joins.append(f"""
+LEFT JOIN (
+  SELECT {', '.join(garden_cols)}
+  FROM [dbo].[{GARDENS_TABLE}]
+) garden
+  ON {join_cond}
+""".strip())
+
+        # 6) Assemble & run
+        sql_query = f"""
+SELECT DISTINCT
+  {', '.join(selected_clauses)}
+FROM [dbo].[{core_table}] core
+{chr(10).join(joins)}
+""".strip()
         result_df = fetch_data_from_sql(sql_query)
-        
-        # Generate filename
-        filename = f"{core_table}_joined_data.csv"
-        
-        return dcc.send_data_frame(result_df.to_csv, filename, index=False)
-        
+        # guard against None or empty
+        if result_df is None or result_df.empty:
+            return dash.no_update
+
+        # 6) Trigger download
+        return dcc.send_data_frame(
+            result_df.to_csv,
+            f"{core_table}_joined_data.csv",
+            index=False
+        )
+
     except Exception as e:
         print(f"Error during download: {e}")
         return dash.no_update
-
 
 # Error button
 @callback(
