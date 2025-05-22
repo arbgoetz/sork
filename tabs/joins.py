@@ -1,5 +1,5 @@
 import os
-from dash import dcc, html, Input, Output, State, callback, dash_table, ctx
+from dash import dcc, html, Input, Output, State, callback, callback_context, dash_table, ctx
 import dash
 from dotenv import load_dotenv
 from database import fetch_data_from_sql
@@ -9,7 +9,17 @@ import pandas as pd
 # Load environment variables
 load_dotenv(override=True)
 
-table_options = os.getenv("TABLE_OPTIONS").split(',')
+CORE_TABLES={
+    "db_main": "Growth/Survival",
+    "budburst_date1": "First Budburst Date",
+    "budburst_detailed_all": "All Budburst Stages",
+    "biomass_2021_combined_fordb_052224": "Biomass",
+    "leaf_traits_2016": "Leaf traits",
+}
+
+MATERNAL_TREE_TABLE="Valley oak maternal tree climate data BCM 2018_03_08"
+
+GARDENS_TABLE="gardens_20152023prismmonthly"
 
 # Create a layout for the joins tab
 joins_layout = dcc.Tab(
@@ -17,487 +27,547 @@ joins_layout = dcc.Tab(
     id="joins-tab",
     style={"padding": "15px"},
     children=[
-        # Store the tab's active state
-        dcc.Store(id="joins-tab-active", data=False),
-        html.Br(),
-        html.H4("Table Joins", style={"marginBottom": "20px"}),
-        
-        # # Main container for the join operation
-        # html.Div([
-        #     # Left side - Join configuration
-        #     html.Div([
-        #         # First table selection
-        #         html.Div([
-        #             html.Label("Step 1: Select first table", style={"fontWeight": "bold", "marginBottom": "5px"}),
-        #             dcc.Dropdown(
-        #                 id="first-table-dropdown",
-        #                 options=[{"label": table, "value": table} for table in table_options],
-        #                 placeholder="Select first table"
-        #             ),
-        #         ], style={"marginBottom": "15px"}),
+        dcc.Store(id='joins-tab-active', data=False),  
+        html.Div(
+            [
+                # Pick the core table
+                html.Div([
+                    html.Label("Common Garden Dataset:", style={"fontWeight":"bold", "marginBottom":"5px"}),
+                    dcc.Dropdown(
+                        id="join-tab-core-dropdown",
+                        options=[{"label":value, "value":key} for key,value in CORE_TABLES.items()],
+                        placeholder="Select a Table"
+                    ),
+                ], style={"marginBottom":"15px"}),
+
+                # Pick the core table columns
+                html.Div([
+                    html.Div([
+                        html.Label("Select columns to include:", style={"fontWeight": "bold", "marginBottom": "5px"}),
+                        html.Button("Select All", id="join-select_all_btn", n_clicks=0, style={"marginLeft": "10px", "fontSize": "0.8em"}),
+                        html.Button("Deselect All", id="join-deselect_all_btn", n_clicks=0, style={"marginLeft": "10px", "fontSize": "0.8em"}),
+                    ], style={"display": "flex", "alignItems": "center", "marginBottom": "5px"}),
+                    dcc.Checklist(id="join-core-table-options", options=[], value=[], inline=False,
+                                labelStyle={"display": "block", "marginBottom": "3px"},
+                                style={"maxHeight": "200px", "overflowY": "auto", "padding": "10px", "backgroundColor": "#f9f9f9", "borderRadius": "5px"}),
+                ], id="join-table-columns-container", style={"display": "none", "marginBottom": "15px"}),
+
+
+                # Pick the maternal tree table columns
+                html.Div([
+                    html.Div([
+                        html.Label("Select Maternal Tree Data Variables:", style={"fontWeight": "bold", "marginBottom": "5px"}),
+                        html.Button("Select All", id="join-select_all_btn-2", n_clicks=0, style={"marginLeft": "10px", "fontSize": "0.8em"}),
+                        html.Button("Deselect All", id="join-deselect_all_btn-2", n_clicks=0, style={"marginLeft": "10px", "fontSize": "0.8em"}),
+                    ], style={"display": "flex", "alignItems": "center", "marginBottom": "5px"}),
+                    dcc.Checklist(id="join-tree-table-options", options=[], value=[], inline=False,
+                                labelStyle={"display": "block", "marginBottom": "3px"},
+                                style={"maxHeight": "200px", "overflowY": "auto", "padding": "10px", "backgroundColor": "#f9f9f9", "borderRadius": "5px"}),
+                ], id="join-tree-table-columns-container", style={"display": "none", "marginBottom": "15px"}),
+
+
+                # Pick the garden climate variables
+                html.Div([
+                    html.Div([
+                        html.Label("Select Garden Climate Variables:", style={"fontWeight": "bold", "marginBottom": "5px"}),
+                        html.Button("Select All", id="join-select_all_btn-3", n_clicks=0, style={"marginLeft": "10px", "fontSize": "0.8em"}),
+                        html.Button("Deselect All", id="join-deselect_all_btn-3", n_clicks=0, style={"marginLeft": "10px", "fontSize": "0.8em"}),
+                    ], style={"display": "flex", "alignItems": "center", "marginBottom": "5px"}),
+                    dcc.Checklist(id="join-garden-table-options", options=[], value=[], inline=False,
+                                labelStyle={"display": "block", "marginBottom": "3px"},
+                                style={"maxHeight": "200px", "overflowY": "auto", "padding": "10px", "backgroundColor": "#f9f9f9", "borderRadius": "5px"}),
+                ], id="join-garden-table-columns-container", style={"display": "none", "marginBottom": "15px"}),
+
+
+                html.Div([
+                    html.Button(
+                        "Execute Join",
+                        id="join-tab-execute-button",
+                        style={
+                            "backgroundColor": "#007bff",
+                            "color": "white",
+                            "border": "none",
+                            "borderRadius": "4px",
+                            "padding": "10px 20px",
+                            "fontSize": "16px",
+                            "cursor": "pointer"
+                        }
+                    )
+                ], id="join-tab-execute-button-div", style={"display": "none", "textAlign": "center", "marginTop": "20px"}),
                 
-        #         # Join type selection
-        #         html.Div([
-        #             html.Label("Step 2: Select join type", style={"fontWeight": "bold", "marginBottom": "5px"}),
-        #             dcc.Dropdown(
-        #                 id="join-type-dropdown",
-        #                 options=[
-        #                     {"label": "Inner Join", "value": "inner"},
-        #                     {"label": "Left Join", "value": "left"},
-        #                     {"label": "Right Join", "value": "right"},
-        #                     {"label": "Full Outer Join", "value": "full"},
-        #                 ],
-        #                 placeholder="Select join type"
-        #             ),
-        #             html.Div([
-        #                 html.Img(src="https://i.imgur.com/1sxnQ4j.png", style={"width": "100%", "marginTop": "10px"}),
-        #                 html.P("Join visualization", style={"textAlign": "center", "color": "#666", "fontSize": "0.8em"})
-        #             ], id="join-visualization", style={"display": "none", "marginTop": "10px"})
-        #         ], style={"marginBottom": "15px"}),
+                # Error message div - separate from results
+                html.Div([
+                    html.Label("Cannot Complete Execute without Selecting Maternal Tree or Garden Climate Variables", 
+                              style={"fontWeight": "bold", "marginBottom": "5px", "color": "red"})
+                ], id="join-tab-execute-error", style={"display": "none", "textAlign": "center", "marginTop": "20px"}),
                 
-        #         # Second table selection
-        #         html.Div([
-        #             html.Label("Step 3: Select second table", style={"fontWeight": "bold", "marginBottom": "5px"}),
-        #             dcc.Dropdown(
-        #                 id="second-table-dropdown",
-        #                 options=[{"label": table, "value": table} for table in table_options],
-        #                 placeholder="Select second table"
-        #             ),
-        #         ], style={"marginBottom": "15px"}),
-                
-        #         # Join key selection
-        #         html.Div([
-        #             html.Label("Step 4: Select join keys", style={"fontWeight": "bold", "marginBottom": "5px"}),
-        #             html.Div([
-        #                 html.Div([
-        #                     html.Label("Key in first table:", style={"marginBottom": "5px"}),
-        #                     dcc.Dropdown(id="first-table-key", placeholder="Select column")
-        #                 ], style={"width": "48%"}),
-        #                 html.Div([
-        #                     html.Label("Key in second table:", style={"marginBottom": "5px"}),
-        #                     dcc.Dropdown(id="second-table-key", placeholder="Select column")
-        #                 ], style={"width": "48%"}),
-        #             ], style={"display": "flex", "justifyContent": "space-between"}),
-        #         ], id="join-keys-div", style={"display": "none", "marginBottom": "15px"}),
-                
-        #         # Column selection
-        #         html.Div([
-        #             html.Label("Step 5: Select columns to include", style={"fontWeight": "bold", "marginBottom": "5px"}),
-        #             html.Div([
-        #                 html.Div([
-        #                     html.Label("First table columns:", style={"marginBottom": "5px"}),
-        #                     html.Button("Select All", id="first-table-select-all", n_clicks=0, 
-        #                                style={"marginLeft": "10px", "fontSize": "0.8em"}),
-        #                     html.Button("Deselect All", id="first-table-deselect-all", n_clicks=0, 
-        #                                style={"marginLeft": "10px", "fontSize": "0.8em"})
-        #                 ], style={"display": "flex", "alignItems": "center", "marginBottom": "5px"}),
-        #                 dcc.Checklist(
-        #                     id="first-table-columns",
-        #                     options=[],
-        #                     value=[],
-        #                     style={"maxHeight": "150px", "overflowY": "auto", "padding": "10px", 
-        #                           "backgroundColor": "#f9f9f9", "borderRadius": "5px"}
-        #                 )
-        #             ], style={"marginBottom": "10px"}),
-        #             html.Div([
-        #                 html.Div([
-        #                     html.Label("Second table columns:", style={"marginBottom": "5px"}),
-        #                     html.Button("Select All", id="second-table-select-all", n_clicks=0, 
-        #                                style={"marginLeft": "10px", "fontSize": "0.8em"}),
-        #                     html.Button("Deselect All", id="second-table-deselect-all", n_clicks=0, 
-        #                                style={"marginLeft": "10px", "fontSize": "0.8em"})
-        #                 ], style={"display": "flex", "alignItems": "center", "marginBottom": "5px"}),
-        #                 dcc.Checklist(
-        #                     id="second-table-columns",
-        #                     options=[],
-        #                     value=[],
-        #                     style={"maxHeight": "150px", "overflowY": "auto", "padding": "10px", 
-        #                           "backgroundColor": "#f9f9f9", "borderRadius": "5px"}
-        #                 )
-        #             ])
-        #         ], id="column-selection-div", style={"display": "none", "marginBottom": "15px"}),
-                
-        #         # Row limit
-        #         html.Div([
-        #             html.Label("Step 6: Set row limit", style={"fontWeight": "bold", "marginBottom": "5px"}),
-        #             dcc.Input(
-        #                 id="row-limit-input",
-        #                 type="number",
-        #                 min=1,
-        #                 max=10000,
-        #                 value=1000,
-        #                 style={"width": "100px"}
-        #             ),
-        #         ], id="row-limit-div", style={"display": "none", "marginBottom": "15px"}),
-                
-        #         # Execute join button
-        #         html.Div([
-        #             html.Button(
-        #                 "Execute Join",
-        #                 id="execute-join-button",
-        #                 style={
-        #                     "backgroundColor": "#007bff",
-        #                     "color": "white",
-        #                     "border": "none",
-        #                     "borderRadius": "4px",
-        #                     "padding": "10px 20px",
-        #                     "fontSize": "16px",
-        #                     "cursor": "pointer"
-        #                 }
-        #             )
-        #         ], id="execute-button-div", style={"display": "none", "textAlign": "center", "marginTop": "20px"})
-        #     ], style={"width": "40%", "padding": "20px", "backgroundColor": "#e5ecf6", "borderRadius": "10px"}),
-            
-        #     # Right side - Results
-        #     html.Div([
-        #         html.Div([
-        #             html.H5("Join Preview", style={"marginBottom": "15px"}),
-        #             html.Div(id="join-sql-query", style={"fontFamily": "monospace", "backgroundColor": "#f8f9fa", 
-        #                                                   "padding": "10px", "borderRadius": "5px", 
-        #                                                   "marginBottom": "15px", "overflowX": "auto"}),
-        #             dcc.Loading(
-        #                 html.Div(id="join-results-table"),
-        #                 type="circle"
-        #             ),
-        #             html.Div([
-        #                 html.Div(id="join-results-stats", style={"marginTop": "15px", "color": "#666"}),
-        #                 html.Button(
-        #                     "Download CSV",
-        #                     id="download-join-csv-button",
-        #                     style={
-        #                         "backgroundColor": "#28a745",
-        #                         "color": "white",
-        #                         "border": "none",
-        #                         "borderRadius": "4px",
-        #                         "padding": "5px 15px",
-        #                         "marginTop": "15px"
-        #                     }
-        #                 ),
-        #                 dcc.Download(id="download-join-csv")
-        #             ])
-        #         ], id="join-results-div", style={"display": "none"})
-        #     ], style={"width": "55%", "marginLeft": "5%", "padding": "20px", "backgroundColor": "#f0f2f5", 
-        #               "borderRadius": "10px", "maxHeight": "800px", "overflowY": "auto"})
-        # ], style={"display": "flex", "justifyContent": "space-between", "marginTop": "20px"}),
-        
-        # # Placeholder message
-        # html.Div(
-        #     html.H5("Select tables and join parameters to start", 
-        #            style={"textAlign": "center", "marginTop": "50px", "color": "#666"}),
-        #     id="joins-placeholder"
-        # ),
-        
-        # # Error message area
-        # html.Div(id="join-error-message", style={"color": "red", "marginTop": "20px", "fontWeight": "bold"})
+                # Join execution div - only shows after successful execution
+                html.Div([
+                    html.H5("Join Preview", style={"marginBottom": "15px"}),
+                    html.Div(id="join-tab-sql-query", style={"fontFamily": "monospace", "backgroundColor": "#f8f9fa", 
+                                                      "padding": "10px", "borderRadius": "5px", 
+                                                      "marginBottom": "15px", "overflowX": "auto"}),
+                    dcc.Loading(
+                        html.Div(id="join-tab-results-table"),
+                        type="circle"
+                    ),
+                    html.Div([
+                        html.Div(id="join-tab-results-stats", style={"marginTop": "15px", "color": "#666"}),
+                        html.Button(
+                            "Download CSV",
+                            id="download-join-tab-csv-button",
+                            style={
+                                "backgroundColor": "#28a745",
+                                "color": "white",
+                                "border": "none",
+                                "borderRadius": "4px",
+                                "padding": "5px 15px",
+                                "marginTop": "15px"
+                            }
+                        ),
+                        dcc.Download(id="download-join-tab-csv")
+                    ])
+                ], id="join-tab-results-div", style={"display": "none"})
+            ]
+        )
     ]
+) 
+
+# Track tab selection state
+@callback(
+    Output('joins-tab-active', 'data'),
+    [Input('main-tabs', 'value')]  
 )
+def set_tab_active(tab_value):
+    return tab_value == 'joins-tab'
 
-# # Track tab selection state
-# @callback(
-#     Output('joins-tab-active', 'data'),
-#     [Input('main-tabs', 'value')]
-# )
-# def set_joins_tab_active(tab_value):
-#     return tab_value == 'joins-tab'
+# Reset all components when tab is switched
+@callback(
+    [Output('join-tab-core-dropdown', 'value', allow_duplicate=True),
+     Output('join-core-table-options', 'options', allow_duplicate=True),
+     Output('join-core-table-options', 'value', allow_duplicate=True),
+     Output('join-tree-table-options', 'options', allow_duplicate=True),
+     Output('join-tree-table-options', 'value', allow_duplicate=True),
+     Output('join-garden-table-options', 'options', allow_duplicate=True),
+     Output('join-garden-table-options', 'value', allow_duplicate=True),
+     Output('join-table-columns-container', 'style', allow_duplicate=True),
+     Output('join-tree-table-columns-container', 'style', allow_duplicate=True),
+     Output('join-garden-table-columns-container', 'style', allow_duplicate=True),
+     Output('join-tab-execute-button-div', 'style', allow_duplicate=True),
+     Output('join-tab-execute-error', 'style', allow_duplicate=True),
+     Output('join-tab-results-div', 'style', allow_duplicate=True),
+     Output('join-tab-sql-query', 'children', allow_duplicate=True),
+     Output('join-tab-results-table', 'children', allow_duplicate=True),
+     Output('join-tab-results-stats', 'children', allow_duplicate=True)],
+    [Input('joins-tab-active', 'data')],
+    prevent_initial_call=True
+)
+def reset_tab_data(is_active):
+    if not is_active:
+        # Reset all controls when leaving the tab
+        return (None, [], [], [], [], [], [], 
+                {"display": "none"}, {"display": "none"}, {"display": "none"}, 
+                {"display": "none"}, {"display": "none"}, {"display": "none"},
+                "", [], "")
+    else:
+        # Don't reset when entering the tab
+        return [dash.no_update] * 16
 
-# # Reset when tab is switched
-# @callback(
-#     [Output('first-table-dropdown', 'value', allow_duplicate=True),
-#      Output('join-type-dropdown', 'value', allow_duplicate=True),
-#      Output('second-table-dropdown', 'value', allow_duplicate=True),
-#      Output('first-table-key', 'value', allow_duplicate=True),
-#      Output('second-table-key', 'value', allow_duplicate=True),
-#      Output('first-table-columns', 'options', allow_duplicate=True),
-#      Output('first-table-columns', 'value', allow_duplicate=True),
-#      Output('second-table-columns', 'options', allow_duplicate=True),
-#      Output('second-table-columns', 'value', allow_duplicate=True),
-#      Output('row-limit-input', 'value', allow_duplicate=True),
-#      Output('join-results-div', 'style', allow_duplicate=True),
-#      Output('joins-placeholder', 'style', allow_duplicate=True),
-#      Output('join-error-message', 'children', allow_duplicate=True)],
-#     [Input('joins-tab-active', 'data')],
-#     prevent_initial_call=True
-# )
-# def reset_joins_tab_data(is_active):
-#     if not is_active:
-#         # Reset all controls when leaving the tab
-#         return (None, None, None, None, None, 
-#                 [], [], [], [], 1000, 
-#                 {"display": "none"}, {"display": "block"}, "")
-#     else:
-#         # Don't reset when entering the tab
-#         return [dash.no_update] * 13
+# Reset core table columns when core table changes
+@callback(
+    [Output('join-core-table-options', 'value', allow_duplicate=True),
+     Output('join-tree-table-options', 'value', allow_duplicate=True),
+     Output('join-garden-table-options', 'value', allow_duplicate=True),
+     Output('join-tab-results-div', 'style', allow_duplicate=True),
+     Output('join-tab-execute-error', 'style', allow_duplicate=True)],
+    [Input('join-tab-core-dropdown', 'value')],
+    prevent_initial_call=True
+)
+def reset_columns_on_table_change(selected_table):
+    # Reset all column selections and hide results when core table changes
+    return [], [], [], {"display": "none"}, {"display": "none"}
 
-# # Update the join visualization based on join type
-# @callback(
-#     [Output('join-visualization', 'style'),
-#      Output('join-visualization', 'children')],
-#     [Input('join-type-dropdown', 'value')]
-# )
-# def update_join_visualization(join_type):
-#     if not join_type:
-#         return {"display": "none"}, []
-    
-#     # Image URLs for different join types
-#     join_images = {
-#         "inner": "/assets/inner.png",
-#         "left": "/assets/left.png",
-#         "right": "/assets/right.png",
-#         "full": "/assets/outer.png"
-#     }
-    
-#     # Join type descriptions
-#     join_descriptions = {
-#         "inner": "Returns rows when there is a match in both tables",
-#         "left": "Returns all rows from the left table, and matched rows from the right table",
-#         "right": "Returns all rows from the right table, and matched rows from the left table",
-#         "full": "Returns all rows when there is a match in either table"
-#     }
-    
-#     return {"display": "block", "marginTop": "10px"}, [
-#         html.Img(src=join_images[join_type], style={"width": "100%", "marginTop": "10px"}),
-#         html.P(join_descriptions[join_type], style={"textAlign": "center", "color": "#666", "fontSize": "0.9em"})
-#     ]
+# Handle conditionally rendered variable checklist
+@callback(
+    [Output("join-core-table-options", "options"),
+     Output("join-table-columns-container", "style"),
+     Output("join-tree-table-options", "options"),
+     Output("join-tree-table-columns-container", "style"),
+     Output("join-garden-table-options", "options"),
+     Output("join-garden-table-columns-container", "style"),
+     Output("join-tab-execute-button-div", "style")],
+    [Input("join-tab-core-dropdown", "value")],
+)
+def update_core_table_columns(selected_table):
+    if selected_table is None:
+        return [], {"display": "none"}, [], {"display": "none"}, [], {"display": "none"}, {"display": "none"}
 
-# # Get columns for both tables when selected
-# @callback(
-#     [Output('join-keys-div', 'style'),
-#      Output('column-selection-div', 'style'),
-#      Output('row-limit-div', 'style'),
-#      Output('execute-button-div', 'style'),
-#      Output('first-table-key', 'options'),
-#      Output('second-table-key', 'options'),
-#      Output('first-table-columns', 'options'),
-#      Output('second-table-columns', 'options')],
-#     [Input('first-table-dropdown', 'value'),
-#      Input('second-table-dropdown', 'value'),
-#      Input('join-type-dropdown', 'value')]
-# )
-# def update_column_options(first_table, second_table, join_type):
-#     # Don't display anything if any selection is missing
-#     if not first_table or not second_table or not join_type:
-#         return {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}, [], [], [], []
-    
-#     # Get columns from both tables
-#     try:
-#         first_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM [dbo].[{first_table}]")
-#         second_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM [dbo].[{second_table}]")
-        
-#         first_columns = first_df.columns.tolist()
-#         second_columns = second_df.columns.tolist()
-        
-#         first_column_options = [{"label": col, "value": col} for col in first_columns]
-#         second_column_options = [{"label": col, "value": col} for col in second_columns]
-        
-#         # Show all divs
-#         return ({"display": "block", "marginBottom": "15px"}, 
-#                 {"display": "block", "marginBottom": "15px"},
-#                 {"display": "block", "marginBottom": "15px"},
-#                 {"display": "block", "textAlign": "center", "marginTop": "20px"},
-#                 first_column_options,
-#                 second_column_options,
-#                 first_column_options,
-#                 second_column_options)
-#     except Exception as e:
-#         print(f"Error getting columns: {e}")
-#         return {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}, [], [], [], []
+    try:
+        # Fetch garden table columns
+        sample_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM dbo.[{GARDENS_TABLE}]")
+        cols = sample_df.columns.tolist()
+        GARDENS_TABLE_OPTIONS = [{'label': c, 'value': c} for c in cols]
 
-# # Handle column selection buttons
-# @callback(
-#     Output('first-table-columns', 'value'),
-#     [Input('first-table-select-all', 'n_clicks'),
-#      Input('first-table-deselect-all', 'n_clicks')],
-#     [State('first-table-columns', 'options'), 
-#      State('first-table-columns', 'value')]
-# )
-# def handle_first_table_column_selection(select_clicks, deselect_clicks, options, current_value):
-#     trigger_id = ctx.triggered_id if ctx.triggered_id else 'no-id'
-    
-#     if trigger_id == 'first-table-select-all':
-#         return [option['value'] for option in options]
-#     elif trigger_id == 'first-table-deselect-all':
-#         return []
-    
-#     return current_value
+        # Fetch maternal tree table columns
+        sample_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM dbo.[{MATERNAL_TREE_TABLE}]")
+        cols = sample_df.columns.tolist()
+        MATERNAL_TREE_OPTIONS = [{'label': c, 'value': c} for c in cols]
 
-# @callback(
-#     Output('second-table-columns', 'value'),
-#     [Input('second-table-select-all', 'n_clicks'),
-#      Input('second-table-deselect-all', 'n_clicks')],
-#     [State('second-table-columns', 'options'), 
-#      State('second-table-columns', 'value')]
-# )
-# def handle_second_table_column_selection(select_clicks, deselect_clicks, options, current_value):
-#     trigger_id = ctx.triggered_id if ctx.triggered_id else 'no-id'
-    
-#     if trigger_id == 'second-table-select-all':
-#         return [option['value'] for option in options]
-#     elif trigger_id == 'second-table-deselect-all':
-#         return []
-    
-#     return current_value
+        # Fetch core table columns
+        sample_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM [dbo].[{selected_table}]")
+        cols = sample_df.columns.tolist()
+        opts = [{'label': c, 'value': c} for c in cols]
+        
+        return (opts, {"display": "block", "marginBottom": "15px"}, 
+                MATERNAL_TREE_OPTIONS, {"display": "block", "marginBottom": "15px"}, 
+                GARDENS_TABLE_OPTIONS, {"display": "block", "marginBottom": "15px"}, 
+                {"display": "block", "textAlign": "center", "marginTop": "20px"})
+    except Exception as e:
+        print(f"Error fetching columns: {e}")
+        return [], {"display": "none"}, [], {"display": "none"}, [], {"display": "none"}, {"display": "none"}
 
-# # Generate and execute the join
-# @callback(
-#     [Output('join-results-div', 'style'),
-#      Output('joins-placeholder', 'style'),
-#      Output('join-sql-query', 'children'),
-#      Output('join-results-table', 'children'),
-#      Output('join-results-stats', 'children'),
-#      Output('join-error-message', 'children')],
-#     [Input('execute-join-button', 'n_clicks')],
-#     [State('first-table-dropdown', 'value'),
-#      State('join-type-dropdown', 'value'),
-#      State('second-table-dropdown', 'value'),
-#      State('first-table-key', 'value'),
-#      State('second-table-key', 'value'),
-#      State('first-table-columns', 'value'),
-#      State('second-table-columns', 'value'),
-#      State('row-limit-input', 'value')]
-# )
-# def execute_join(n_clicks, first_table, join_type, second_table, first_key, second_key, 
-#                  first_columns, second_columns, row_limit):
-#     if n_clicks is None or n_clicks == 0:
-#         return {"display": "none"}, {"display": "block"}, "", None, "", ""
-    
-#     # Validate inputs
-#     if not first_table or not join_type or not second_table or not first_key or not second_key:
-#         return {"display": "none"}, {"display": "block"}, "", None, "", "Please select all required fields"
-    
-#     if not first_columns and not second_columns:
-#         return {"display": "none"}, {"display": "block"}, "", None, "", "Please select at least one column from either table"
-    
-#     try:
-#         # Format column selections for SQL query
-#         first_cols = []
-#         if first_columns:
-#             for col in first_columns:
-#                 if col != first_key:  # Avoid duplicate keys in the result
-#                     first_cols.append(f"t1.[{col}] AS [t1_{col}]")
-#                 else:
-#                     first_cols.append(f"t1.[{col}]")  # Don't rename the join key
-        
-#         second_cols = []
-#         if second_columns:
-#             for col in second_columns:
-#                 if col != second_key or col == first_key:  # Avoid duplicate keys or columns with same name
-#                     second_cols.append(f"t2.[{col}] AS [t2_{col}]")
-#                 else:
-#                     second_cols.append(f"t2.[{col}]")
-        
-#         # Construct the SQL query
-#         columns = ", ".join(first_cols + second_cols)
-#         if not columns.strip():
-#             columns = "t1.[" + first_key + "], t2.[" + second_key + "]"
-        
-#         sql_query = f"""
-#         SELECT TOP {row_limit} {columns}
-#         FROM [dbo].[{first_table}] AS t1
-#         {join_type.upper()} JOIN [dbo].[{second_table}] AS t2
-#         ON t1.[{first_key}] = t2.[{second_key}]
-#         """
-        
-#         # Execute the query
-#         result_df = fetch_data_from_sql(sql_query)
-        
-#         # Create stats information
-#         row_count = len(result_df)
-#         stats_text = f"Showing {row_count} rows"
-#         if row_count == row_limit:
-#             stats_text += f" (limited to {row_limit} rows)"
-#         stats_text += f" | {len(result_df.columns)} columns"
-        
-#         # Create the table display
-#         table = dash_table.DataTable(
-#             data=result_df.head(1000).to_dict('records'),
-#             columns=[{'name': col, 'id': col} for col in result_df.columns],
-#             page_size=15,
-#             style_table={'overflowX': 'auto'},
-#             style_cell={
-#                 'minWidth': '100px',
-#                 'maxWidth': '300px',
-#                 'overflow': 'hidden',
-#                 'textOverflow': 'ellipsis'
-#             },
-#             style_header={
-#                 'backgroundColor': 'rgb(230, 230, 230)',
-#                 'fontWeight': 'bold'
-#             },
-#             style_data_conditional=[
-#                 {
-#                     'if': {'row_index': 'odd'},
-#                     'backgroundColor': 'rgb(248, 248, 248)'
-#                 }
-#             ],
-#             filter_action="native",
-#             sort_action="native"
-#         )
-        
-#         # Format the SQL query for display
-#         formatted_query = html.Pre(sql_query, style={"margin": 0})
-        
-#         return {"display": "block"}, {"display": "none"}, formatted_query, table, stats_text, ""
-    
-#     except Exception as e:
-#         error_message = str(e)
-#         return {"display": "none"}, {"display": "block"}, "", None, "", f"Error executing join: {error_message}"
+# Handle Core table Select All and Deselect All buttons
+@callback(
+    Output('join-core-table-options', 'value', allow_duplicate=True),
+    [Input('join-select_all_btn', 'n_clicks'), 
+     Input('join-deselect_all_btn', 'n_clicks')],
+    [State('join-core-table-options', 'options'), 
+     State('join-core-table-options', 'value')],
+    prevent_initial_call=True
+)
+def handle_core_select_buttons(select_all_clicks, deselect_all_clicks, current_options, current_values):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else 'no_trigger'
 
-# # Download the join results as CSV
-# @callback(
-#     Output('download-join-csv', 'data'),
-#     [Input('download-join-csv-button', 'n_clicks')],
-#     [State('first-table-dropdown', 'value'),
-#      State('join-type-dropdown', 'value'),
-#      State('second-table-dropdown', 'value'),
-#      State('first-table-key', 'value'),
-#      State('second-table-key', 'value'),
-#      State('first-table-columns', 'value'),
-#      State('second-table-columns', 'value'),
-#      State('row-limit-input', 'value')]
-# )
-# def download_join_results(n_clicks, first_table, join_type, second_table, first_key, second_key, 
-#                          first_columns, second_columns, row_limit):
-#     if n_clicks is None or n_clicks == 0:
-#         return dash.no_update
+    if trigger_id == 'join-select_all_btn' and current_options:
+        return [opt['value'] for opt in current_options]
+    if trigger_id == 'join-deselect_all_btn':
+        return []
     
-#     try:
-#         # Format column selections for SQL query
-#         first_cols = []
-#         if first_columns:
-#             for col in first_columns:
-#                 if col != first_key:  # Avoid duplicate keys in the result
-#                     first_cols.append(f"t1.[{col}] AS [t1_{col}]")
-#                 else:
-#                     first_cols.append(f"t1.[{col}]")  # Don't rename the join key
+    return dash.no_update
+
+# Handle Tree table Select All and Deselect All buttons
+@callback(
+    Output('join-tree-table-options', 'value', allow_duplicate=True),
+    [Input('join-select_all_btn-2', 'n_clicks'), 
+     Input('join-deselect_all_btn-2', 'n_clicks')],
+    [State('join-tree-table-options', 'options'), 
+     State('join-tree-table-options', 'value')],
+    prevent_initial_call=True
+)
+def handle_tree_select_buttons(select_all_clicks, deselect_all_clicks, current_options, current_values):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else 'no_trigger'
+
+    if trigger_id == 'join-select_all_btn-2' and current_options:
+        return [opt['value'] for opt in current_options]
+    if trigger_id == 'join-deselect_all_btn-2':
+        return []
+    
+    return dash.no_update
+
+# Handle Garden table Select All and Deselect All buttons
+@callback(
+    Output('join-garden-table-options', 'value', allow_duplicate=True),
+    [Input('join-select_all_btn-3', 'n_clicks'), 
+     Input('join-deselect_all_btn-3', 'n_clicks')],
+    [State('join-garden-table-options', 'options'), 
+     State('join-garden-table-options', 'value')],
+    prevent_initial_call=True
+)
+def handle_garden_select_buttons(select_all_clicks, deselect_all_clicks, current_options, current_values):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else 'no_trigger'
+
+    if trigger_id == 'join-select_all_btn-3' and current_options:
+        return [opt['value'] for opt in current_options]
+    if trigger_id == 'join-deselect_all_btn-3':
+        return []
+    
+    return dash.no_update
+
+# Main execution callback - handles both validation and execution
+@callback(
+    [Output("join-tab-results-div", "style", allow_duplicate=True),
+     Output("join-tab-results-table", "children", allow_duplicate=True),
+     Output("join-tab-sql-query", "children", allow_duplicate=True),
+     Output("join-tab-results-stats", "children", allow_duplicate=True)],
+    [Input("join-tab-execute-button", "n_clicks")],
+    [State("join-tab-core-dropdown", "value"),
+     State("join-core-table-options", "value"),
+     State("join-tree-table-options", "value"),
+     State("join-garden-table-options", "value")],
+    prevent_initial_call=True
+)
+def execute_join(n_clicks, core_table, core_table_vars, maternal_tree_vars, garden_climate_vars):
+    if n_clicks is None or n_clicks == 0:
+        return {"display": "none"}, [], "", ""
+    
+    # Validate that we have a core table and at least one set of variables from maternal or garden
+    if not core_table:
+        return {"display": "none"}, [], "", ""
+
+    if not maternal_tree_vars and not garden_climate_vars:
+        return {"display": "none"}, [], "", ""
+    
+    # If we get here, we have a valid join - hide error and show results
+    try:
+        # Build the SQL query with proper join logic
         
-#         second_cols = []
-#         if second_columns:
-#             for col in second_columns:
-#                 if col != second_key or col == first_key:  # Avoid duplicate keys or columns with same name
-#                     second_cols.append(f"t2.[{col}] AS [t2_{col}]")
-#                 else:
-#                     second_cols.append(f"t2.[{col}]")
+        # Determine required core columns based on table type
+        if core_table == "leaf_traits_2016":
+            required_core_cols = ["Accession", "Locality", "Site"]
+        else:
+            required_core_cols = ["Accession", "Locality", "Year", "Site"]
         
-#         # Construct the SQL query
-#         columns = ", ".join(first_cols + second_cols)
-#         if not columns.strip():
-#             columns = "t1.[" + first_key + "], t2.[" + second_key + "]"
+        # Build core table column selection
+        core_cols_to_select = required_core_cols.copy()
+        if core_table_vars:
+            # Add user-selected columns that aren't already in required columns
+            for col in core_table_vars:
+                if col not in core_cols_to_select:
+                    core_cols_to_select.append(col)
         
-#         sql_query = f"""
-#         SELECT TOP {row_limit} {columns}
-#         FROM [dbo].[{first_table}] AS t1
-#         {join_type.upper()} JOIN [dbo].[{second_table}] AS t2
-#         ON t1.[{first_key}] = t2.[{second_key}]
-#         """
+        # Format core columns for SELECT
+        core_columns = ", ".join([f'core.[{col}]' for col in core_cols_to_select])
+        selected_columns = [core_columns]
         
-#         # Execute the query
-#         result_df = fetch_data_from_sql(sql_query)
+        # Build joins and additional columns
+        joins = []
         
-#         # Generate a filename based on the tables being joined
-#         filename = f"{first_table}_{join_type}_join_{second_table}.csv"
+        # Maternal tree join if selected
+        if maternal_tree_vars:
+            maternal_columns = ", ".join([f'maternal.[{col}] AS maternal_{col}' for col in maternal_tree_vars])
+            selected_columns.append(maternal_columns)
+            
+            # Join condition with TRY_CAST for data type safety
+            maternal_join = f"""LEFT JOIN (
+        SELECT 
+            TRY_CAST(TRY_CAST("Accession" AS NUMERIC) AS INT) AS "Accession",
+            "Locality",
+            {", ".join([f'[{col}]' for col in maternal_tree_vars])}
+        FROM "{MATERNAL_TREE_TABLE}"
+    ) maternal
+    ON (
+        core."Accession" = maternal."Accession" AND
+        core."Locality" = maternal."Locality"
+    )"""
+            joins.append(maternal_join)
         
-#         return dcc.send_data_frame(result_df.to_csv, filename, index=False)
-#     except Exception as e:
-#         # If there's an error, don't download anything
-#         print(f"Error during download: {e}")
-#         return dash.no_update
+        # Garden climate join if selected
+        if garden_climate_vars:
+            garden_columns = ", ".join([f'garden.[{col}] AS garden_{col}' for col in garden_climate_vars])
+            selected_columns.append(garden_columns)
+            
+            # Different join conditions based on core table type
+            if core_table == "leaf_traits_2016":
+                # For leaf traits, only join on Site
+                garden_join = f"""LEFT JOIN (
+        SELECT 
+            "Site",
+            {", ".join([f'[{col}]' for col in garden_climate_vars])}
+        FROM "{GARDENS_TABLE}"
+    ) garden
+    ON (core."Site" = garden."Site")"""
+            else:
+                # For other tables, join on Year and Site with TRY_CAST
+                garden_join = f"""LEFT JOIN (
+        SELECT 
+            TRY_CAST(TRY_CAST("Year" AS NUMERIC) AS INT) AS "Year",
+            "Site",
+            {", ".join([f'[{col}]' for col in garden_climate_vars])}
+        FROM "{GARDENS_TABLE}"
+    ) garden
+    ON (core."Year" = garden."Year" AND core."Site" = garden."Site")"""
+            joins.append(garden_join)
+        
+        # Build the complete SQL query
+        sql_query = f"""SELECT DISTINCT {', '.join(selected_columns)}
+FROM (
+    SELECT
+        {', '.join([f'core.[{col}]' for col in core_cols_to_select])}
+    FROM "{core_table}" core
+    {chr(10).join(joins)}
+) q01"""
+        
+        # Execute the query
+        result_df = fetch_data_from_sql(sql_query)
+        
+        # Create the results table
+        table = dash_table.DataTable(
+            data=result_df.head(1000).to_dict('records'),
+            columns=[{'name': col, 'id': col} for col in result_df.columns],
+            page_size=15,
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'minWidth': '100px',
+                'maxWidth': '300px',
+                'overflow': 'hidden',
+                'textOverflow': 'ellipsis'
+            },
+            style_header={
+                'backgroundColor': 'rgb(230, 230, 230)',
+                'fontWeight': 'bold'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': 'rgb(248, 248, 248)'
+                }
+            ],
+            filter_action="native",
+            sort_action="native"
+        )
+        
+        # Format the SQL query for display
+        formatted_query = html.Pre(sql_query, style={"margin": 0, "fontSize": "12px"})
+        
+        # Create stats
+        row_count = len(result_df)
+        stats_text = f"Showing {row_count} rows | {len(result_df.columns)} columns"
+        if maternal_tree_vars:
+            stats_text += f" | {len(maternal_tree_vars)} maternal variables"
+        if garden_climate_vars:
+            stats_text += f" | {len(garden_climate_vars)} garden variables"
+        
+        return {"display": "block"}, table, formatted_query, stats_text
+        
+    except Exception as e:
+        # If there's an error during execution, show it
+        error_msg = f"Error executing join: {str(e)}"
+        print(f"SQL Error: {error_msg}")  # For debugging
+        return {"display": "none"}, [], f"Error: {error_msg}", ""
+
+# Reset results when any selection changes (but don't show error until execute is clicked)
+@callback(
+    [Output("join-tab-results-div", "style", allow_duplicate=True)],
+    [Input("join-core-table-options", "value"),
+     Input("join-tree-table-options", "value"),
+     Input("join-garden-table-options", "value")],
+    prevent_initial_call=True
+)
+def reset_results_on_selection_change(core_vars, tree_vars, garden_vars):
+    # Hide results whenever selections change
+    return [{"display": "none"}]
+
+# Download functionality
+@callback(
+    Output('download-join-tab-csv', 'data'),
+    [Input('download-join-tab-csv-button', 'n_clicks')],
+    [State("join-tab-core-dropdown", "value"),
+     State("join-core-table-options", "value"),
+     State("join-tree-table-options", "value"),
+     State("join-garden-table-options", "value")],
+    prevent_initial_call=True
+)
+def download_join_results(n_clicks, core_table, core_table_vars, maternal_tree_vars, garden_climate_vars):
+    if n_clicks is None or n_clicks == 0:
+        return dash.no_update
+    
+    try:
+        # Use the same SQL generation logic as execute_join
+        
+        # Determine required core columns based on table type
+        if core_table == "leaf_traits_2016":
+            required_core_cols = ["Accession", "Locality", "Site"]
+        else:
+            required_core_cols = ["Accession", "Locality", "Year", "Site"]
+        
+        # Build core table column selection
+        core_cols_to_select = required_core_cols.copy()
+        if core_table_vars:
+            # Add user-selected columns that aren't already in required columns
+            for col in core_table_vars:
+                if col not in core_cols_to_select:
+                    core_cols_to_select.append(col)
+        
+        # Format core columns for SELECT
+        core_columns = ", ".join([f'core.[{col}]' for col in core_cols_to_select])
+        selected_columns = [core_columns]
+        
+        # Build joins and additional columns
+        joins = []
+        
+        # Maternal tree join if selected
+        if maternal_tree_vars:
+            maternal_columns = ", ".join([f'maternal.[{col}] AS maternal_{col}' for col in maternal_tree_vars])
+            selected_columns.append(maternal_columns)
+            
+            # Join condition with TRY_CAST for data type safety
+            maternal_join = f"""LEFT JOIN (
+        SELECT 
+            TRY_CAST(TRY_CAST("Accession" AS NUMERIC) AS INT) AS "Accession",
+            "Locality",
+            {", ".join([f'[{col}]' for col in maternal_tree_vars])}
+        FROM "{MATERNAL_TREE_TABLE}"
+    ) maternal
+    ON (
+        core."Accession" = maternal."Accession" AND
+        core."Locality" = maternal."Locality"
+    )"""
+            joins.append(maternal_join)
+        
+        # Garden climate join if selected
+        if garden_climate_vars:
+            garden_columns = ", ".join([f'garden.[{col}] AS garden_{col}' for col in garden_climate_vars])
+            selected_columns.append(garden_columns)
+            
+            # Different join conditions based on core table type
+            if core_table == "leaf_traits_2016":
+                # For leaf traits, only join on Site
+                garden_join = f"""LEFT JOIN (
+        SELECT 
+            "Site",
+            {", ".join([f'[{col}]' for col in garden_climate_vars])}
+        FROM "{GARDENS_TABLE}"
+    ) garden
+    ON (core."Site" = garden."Site")"""
+            else:
+                # For other tables, join on Year and Site with TRY_CAST
+                garden_join = f"""LEFT JOIN (
+        SELECT 
+            TRY_CAST(TRY_CAST("Year" AS NUMERIC) AS INT) AS "Year",
+            "Site",
+            {", ".join([f'[{col}]' for col in garden_climate_vars])}
+        FROM "{GARDENS_TABLE}"
+    ) garden
+    ON (core."Year" = garden."Year" AND core."Site" = garden."Site")"""
+            joins.append(garden_join)
+        
+        # Build the complete SQL query (remove DISTINCT and limit for download)
+        sql_query = f"""SELECT {', '.join(selected_columns)}
+FROM (
+    SELECT
+        {', '.join([f'core.[{col}]' for col in core_cols_to_select])}
+    FROM "{core_table}" core
+    {chr(10).join(joins)}
+) q01"""
+        
+        # Execute the query and download
+        result_df = fetch_data_from_sql(sql_query)
+        
+        # Generate filename
+        filename = f"{core_table}_joined_data.csv"
+        
+        return dcc.send_data_frame(result_df.to_csv, filename, index=False)
+        
+    except Exception as e:
+        print(f"Error during download: {e}")
+        return dash.no_update
+
+
+# Error button
+@callback(
+    Output("join-tab-execute-error", "style"),
+    [Input("join-tab-execute-button", "n_clicks")],
+    [State("join-core-table-options", "value"),
+     State("join-tree-table-options", "value"),
+     State("join-garden-table-options", "value")],
+    prevent_initial_call=True
+)
+def show_error_message(n_clicks, core_table_vars, maternal_tree_vars, garden_climate_vars):
+    if n_clicks is None or n_clicks == 0:
+        return {"display": "none"}
+    
+    # Show error message if no maternal tree or garden climate variables are selected
+    if not maternal_tree_vars and not garden_climate_vars:
+        return {"display": "block", "color": "red", "fontWeight": "bold", "marginBottom": "5px", "textAlign": "center"}
+    
+    return {"display": "none"}
