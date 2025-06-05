@@ -75,6 +75,46 @@ def unauthorized():
 css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
 app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css, suppress_callback_exceptions=True)
 
+# Font editting and coloring
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang&display=swap" rel="stylesheet">
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            body {
+                font-family: 'Gowun Batang', serif;
+                color: #133817;
+            }
+
+            h1, h2, h3, h4, h5, h6, p, div, span, a, button {
+                color: #133817 !important;
+            }
+
+            .btn, .btn-primary, .btn-outline-secondary {
+                color: #133817 !important;  
+            }
+
+            .text-muted {
+                color: #133817 !important;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+
 cache.init_app(server, config={
     'CACHE_TYPE': 'filesystem',
     'CACHE_DIR': '/tmp',
@@ -94,16 +134,16 @@ def serve_layout():
                 # Header
                 html.Div(
                     html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
-                    style={"backgroundColor": 'white', "padding": "15px"}
+                    style={"backgroundColor": '#e9ebe8', "padding": "15px"}
                 ),
                 # AUTH0 CHECK -- TEST
                 html.Div([
                     html.Div(id='user-info', className="mb-2"),
                     html.A(
-                        html.Button("Login", className="btn btn-primary"), 
+                        html.Button("Login", className="btn btn-primary btn-sm login-button"), 
                         href="/login"),
                     html.A(
-                        html.Button("Logout", className="btn btn-outline-secondary btn-sm"), 
+                        html.Button("Logout", className="btn btn-outline-secondary btn-sm logout-button"), 
                         href="/logout")
                 ], className="col-3 text-end"),
                 # Tab content container
@@ -125,7 +165,7 @@ def serve_layout():
             html.Footer(
                 html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
                 style={
-                    "backgroundColor": "#f5f5f5", 
+                    "backgroundColor": "#e9ebe8", 
                     "color": "#e3e3e3", 
                     "padding": "20px", 
                     "width": "100%",
@@ -133,7 +173,7 @@ def serve_layout():
                 }
             )
         ], style={
-            "background-color": "#e5ecf6", 
+            "backgroundColor": "#e9ebe8", 
             "minHeight": "100vh",
             "display": "flex",
             "flexDirection": "column"
@@ -143,7 +183,7 @@ def serve_layout():
             # Header
             html.Div(
                 html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
-                style={"backgroundColor": 'white', "padding": "15px"}
+                style={"backgroundColor": 'e9ebe8', "padding": "15px"}
             ),
             # Errors
             html.Div([
@@ -179,7 +219,7 @@ def serve_layout():
             html.Footer(
                 html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
                 style={
-                    "backgroundColor": "#f5f5f5", 
+                    "backgroundColor": "#e9ebe8", 
                     "color": "#e3e3e3", 
                     "padding": "20px", 
                     "width": "100%",
@@ -187,7 +227,7 @@ def serve_layout():
                 }
             )
         ], style={
-            "background-color": "#e5ecf6", 
+            "backgroundColor": "#e9ebe8", 
             "minHeight": "100vh",
             "display": "flex",
             "flexDirection": "column"

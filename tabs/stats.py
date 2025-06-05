@@ -38,7 +38,7 @@ stats_layout = dcc.Tab(
         html.Br(),
         html.H4("Statistical Analysis", style={"marginBottom": "20px"}),
         html.Div([
-            html.Button("Use Joined Dataset", id="use-joined-button", n_clicks=0),
+            html.Button("Use Joined Dataset", id="use-joined-button", n_clicks=0, style={"border": "1px solid #133817"}),
             dcc.Store(id="use-joined-flag", data=False),  # Flag to track button click
             html.Div(id="joined-dataset-status", style={"marginTop": "10px", "color": "#007bff"})
         ]),

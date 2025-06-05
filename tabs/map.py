@@ -23,9 +23,9 @@ map_layout = dcc.Tab(
                 html.Div([
                     html.Button("Reset View", id="reset-map", 
                                style={
-                                   "backgroundColor": "#6c757d",
+                                   "backgroundColor": "#e9ebe8",
                                    "color": "white",
-                                   "border": "none",
+                                   "border": "1px solid #133817",
                                    "borderRadius": "4px",
                                    "padding": "5px 10px",
                                    "marginRight": "10px"
