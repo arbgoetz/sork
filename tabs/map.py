@@ -10,6 +10,11 @@ from database import fetch_data_from_sql
 load_dotenv(override=True)
 map_table = os.getenv("MAP_TABLE")
 
+UCLA_coordinates = {
+    "latitude": 34.0682,
+    "longitude": -118.4455
+}
+
 map_layout = dcc.Tab(
     id="maps-tab",
     value="map-tab",
@@ -96,6 +101,11 @@ def update_map_and_click_data(reset_clicks, clickData):
     lat_list = fetch_data_from_sql(f"SELECT AVG(Latitude) AS avg_latitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_latitude'].tolist()      
     text_list = fetch_data_from_sql(f"SELECT DISTINCT locality_full_name FROM dbo.[{map_table}]")['locality_full_name'].tolist()
     
+    # add UCLA marker
+    lon_list.append(UCLA_coordinates['longitude'])
+    lat_list.append(UCLA_coordinates['latitude'])
+    text_list.append("UCLA (#1 Public University)")
+
     fig.add_trace(go.Scattermapbox(
         mode = "markers+text",
         lon = lon_list,
