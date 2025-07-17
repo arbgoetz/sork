@@ -48,7 +48,7 @@ def callback_handling():
         userinfo = auth0.parse_id_token(token, nonce=nonce)
         session['user'] = userinfo
         session.pop('nonce', None)
-        return redirect('/')
+        return redirect('/app/')
     except Exception as e:
         print(f'Auth error: {e}')
         return redirect('/unauthorized')
@@ -59,7 +59,7 @@ def logout():
     session.clear()
     return redirect(
         f"https://{os.getenv('AUTH0_DOMAIN')}/v2/logout?"
-        f"returnTo=http://127.0.0.1:8050&"
+        f"returnTo=https://sorklab2.eeb.ucla.edu/app/&"
         f"client_id={os.getenv('AUTH0_CLIENT_ID')}"
     )
 
@@ -68,12 +68,12 @@ def unauthorized():
     session.clear()
     return redirect(
         f"https://{os.getenv('AUTH0_DOMAIN')}/v2/logout?"
-        f"returnTo=http://127.0.0.1:8050/?error=invalid_credentials&"
+        f"returnTo=https://sorklab2.eeb.ucla.edu/app/?error=invalid_credentials&"
         f"client_id={os.getenv('AUTH0_CLIENT_ID')}"
     )
 
 css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
-app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css, suppress_callback_exceptions=True)
+app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css, suppress_callback_exceptions=True, requests_pathname_prefix='/app/')
 
 # Font editting and coloring
 app.index_string = '''
@@ -141,10 +141,10 @@ def serve_layout():
                     html.Div(id='user-info', className="mb-2"),
                     html.A(
                         html.Button("Login", className="btn btn-primary btn-sm login-button"), 
-                        href="/login"),
+                        href="/app/login"),
                     html.A(
                         html.Button("Logout", className="btn btn-outline-secondary btn-sm logout-button"), 
-                        href="/logout")
+                        href="/app/logout")
                 ], className="col-3 text-end"),
                 # Tab content container
                 html.Div([
@@ -198,7 +198,7 @@ def serve_layout():
                     html.Div([
                         html.A(
                             html.Button("Login", className="btn btn-primary"),
-                            href="/login",
+                            href="/app/login",
                             className="d-block mx-auto",
                             style={"width": "fit-content"}
                         )
