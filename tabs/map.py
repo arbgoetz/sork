@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from dotenv import load_dotenv
 import os
-from database import fetch_data_from_sql
+from database import fetch_data_from_sql_pub
 
 # Load environment variables
 load_dotenv(override=True)
@@ -97,9 +97,9 @@ def update_map_and_click_data(reset_clicks, clickData):
     fig = go.Figure()
 
     # Fetch coordinates for map
-    lon_list = fetch_data_from_sql(f"SELECT AVG(Longitude) AS avg_longitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_longitude'].tolist()
-    lat_list = fetch_data_from_sql(f"SELECT AVG(Latitude) AS avg_latitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_latitude'].tolist()      
-    text_list = fetch_data_from_sql(f"SELECT DISTINCT locality_full_name FROM dbo.[{map_table}]")['locality_full_name'].tolist()
+    lon_list = fetch_data_from_sql_pub(f"SELECT AVG(Longitude) AS avg_longitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_longitude'].tolist()
+    lat_list = fetch_data_from_sql_pub(f"SELECT AVG(Latitude) AS avg_latitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_latitude'].tolist()      
+    text_list = fetch_data_from_sql_pub(f"SELECT DISTINCT locality_full_name FROM dbo.[{map_table}]")['locality_full_name'].tolist()
     
     # add UCLA marker
     lon_list.append(UCLA_coordinates['longitude'])
@@ -148,12 +148,12 @@ def display_click_data(clickData):
             locality_name = clickData['points'][0]['text']
             
             # get column names from the table
-            columns = fetch_data_from_sql(f"SELECT TOP 1 * FROM dbo.[{map_table}]").columns.tolist()
+            columns = fetch_data_from_sql_pub(f"SELECT TOP 1 * FROM dbo.[{map_table}]").columns.tolist()
             columns.remove('Accession')
             columns_string = ', '.join(columns)
 
             # Fetch all data for this location
-            df = fetch_data_from_sql(f"SELECT {columns_string} FROM dbo.[{map_table}] WHERE locality_full_name = '{locality_name}'")
+            df = fetch_data_from_sql_pub(f"SELECT {columns_string} FROM dbo.[{map_table}] WHERE locality_full_name = '{locality_name}'")
 
             if df.empty:
                 return html.Div([
