@@ -18,11 +18,11 @@ load_dotenv(override=True)
 table_options = os.getenv("TABLE_OPTIONS").split(",")
 
 # Database connection settings from environment variables
-driver = "ODBC Driver 17 for SQL Server"
+driver = "ODBC Driver 18 for SQL Server"
 server = os.getenv("DB_SERVER")
 database = os.getenv("DB_DATABASE")
-username = os.getenv("DB_USERNAME")
-password = os.getenv("DB_PASSWORD")
+username = os.getenv("DB_USERNAME_UP")
+password = os.getenv("DB_PASSWORD_UP")
 
 # SQL Alchemy connection string
 connection_string = (
