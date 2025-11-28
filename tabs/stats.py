@@ -8,7 +8,6 @@ from scipy import stats
 from database import fetch_data_from_sql
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-import dash_bootstrap_components as dbc
 from dotenv import load_dotenv
 import os
 

@@ -1,6 +1,5 @@
 from dash import dcc, html, Input, Output, State, callback, ctx, ALL, MATCH
 import dash
-from charts import create_database_Table
 from dotenv import load_dotenv
 from database import fetch_data_from_sql
 import os
@@ -25,7 +24,7 @@ dataset_layout = dcc.Tab(
         dcc.Store(id="dataset-tab-active", data=False),
 
         # Main Header and Dropdown
-        # html.Br(),
+        html.Br(),
         html.H4("Table View and Figure Generation", style={"marginBottom": "20px"}),
         dcc.Dropdown(table_options, id="dataset_dropdown", placeholder="Table Options"),
         
@@ -346,7 +345,8 @@ def update_row_count_info(selected_table):
      Output('row_count_container', 'style'),
      Output('placeholder_message', 'style'), 
      Output('dataset_container', 'style'),
-     Output('variable_selector', 'style')],
+     Output('variable_selector', 'style'), 
+     Output('generate_button_div', 'style')],
     [Input('dataset_dropdown', 'value'), 
      Input('options', 'value'), 
      Input('row_count', 'value')],
@@ -355,7 +355,7 @@ def update_row_count_info(selected_table):
 def update_output(selected_table, selected_columns, row_count, column_options):
     no_display = {"display": "none"}
     if selected_table is None:
-        return [], [], no_display, {"display": "block"}, no_display, no_display
+        return [], [], no_display, {"display": "block"}, no_display, no_display, no_display
     if not selected_columns:
         cols = [opt['value'] for opt in column_options]
     else:
@@ -431,15 +431,7 @@ def update_output(selected_table, selected_columns, row_count, column_options):
         print(f"Error fetching table data for AgGrid: {e}")
         row_data, column_defs = [], []
 
-    return row_data, column_defs, {"display": "block", "margin": "10px 0"}, {"display": "none"}, {"display": "block"}, {"display": "block", "marginBottom": "15px"}
-
-# Enable/disable Generate Figure button based on variable selection
-@callback(
-    Output('generate_btn', 'disabled'),
-    Input('x_variable_dropdown', 'value'), Input('y_variable_dropdown', 'value')
-)
-def toggle_generate_button(x_var, y_var):
-    return not (x_var and y_var)
+    return row_data, column_defs, {"display": "block", "margin": "10px 0"}, {"display": "none"}, {"display": "block"}, {"display": "block", "marginBottom": "15px"}, {"display": "block"}
 
 # Generate figure based on variable types
 @callback(
@@ -454,24 +446,31 @@ def toggle_generate_button(x_var, y_var):
     State('dataset_grid', 'rowData'), 
     State('dataset_grid', 'selectedRows'), 
     State('dataset_grid', 'filterModel'),
-    prevent_initial_call=True
-)
+    prevent_initial_call=True)
 def generate_figure(n_clicks, selected_table, x_var, y_var, row_count, row_data, selected_rows, filter_model):
     """Generate appropriate visualization based on selected variables and data."""
     
     # Validate inputs
-    if not n_clicks or n_clicks == 0 or selected_table is None:
+    if not n_clicks or selected_table is None:
         return [], {"display": "none"}, ""
     
     if x_var is None or y_var is None:
-        return [], {"display": "none"}, "Warning: Please select an X and Y variable"
+        warning_msg = html.Div(
+            "Error: Please select an X and Y variable",
+            style={"color": "red", "fontWeight": "bold", "textAlign": "center"}
+        )
+        return [], {"display": "none"}, warning_msg
     
     # Get data with priority: selected rows > filtered rows > all rows > SQL fetch
     df = _get_data_for_plotting(selected_table, x_var, y_var, row_count, 
                                  row_data, selected_rows, filter_model)
     
     if df is None or df.empty:
-        return [], {"display": "none"}, "Warning: No data available for plotting"
+        warning_msg = html.Div(
+            "Warning: No data available for plotting",
+            style={"color": "red", "fontWeight": "bold", "textAlign": "center"}
+        )
+        return [], {"display": "none"}, warning_msg
     
     # Generate appropriate figure based on variable types
     graphs = _create_figure_by_type(df, x_var, y_var)

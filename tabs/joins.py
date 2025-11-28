@@ -1,9 +1,7 @@
-import os
-from dash import dcc, html, Input, Output, State, callback, callback_context, dash_table, ctx
+from dash import dcc, html, Input, Output, State, callback, dash_table, ctx
 import dash
 from dotenv import load_dotenv
 from database import fetch_data_from_sql
-import pandas as pd
 
 # Load environment variables
 load_dotenv(override=True)
