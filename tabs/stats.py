@@ -11,7 +11,6 @@ from sklearn.preprocessing import StandardScaler
 import dash_bootstrap_components as dbc
 from dotenv import load_dotenv
 import os
-from cache_config import cache
 
 # Load environment variables
 load_dotenv(override=True)
@@ -37,12 +36,6 @@ stats_layout = dcc.Tab(
         dcc.Store(id="stats-tab-active", data=False),
         html.Br(),
         html.H4("Statistical Analysis", style={"marginBottom": "20px"}),
-        html.Div([
-            html.Button("Use Joined Dataset", id="use-joined-button", n_clicks=0, style={"border": "1px solid #133817"}),
-            dcc.Store(id="use-joined-flag", data=False),  # Flag to track button click
-            html.Div(id="joined-dataset-status", style={"marginTop": "10px", "color": "#007bff"})
-        ]),
-            
 
         # Table selection
         html.Label("Step 1: Select a table", style={"fontWeight": "bold", "marginBottom": "5px", "fontSize": "16px"}), 
@@ -142,6 +135,30 @@ stats_layout = dcc.Tab(
     ]
 )
 
+
+
+# ===== HELPERS =====
+
+# Function to get numeric columns from a table
+def get_numeric_columns(table_name):
+    try:
+        # Get a sample of data to determine column types
+        df = fetch_data_from_sql(f"SELECT TOP 100 * FROM [dbo].[{table_name}]")
+        
+        # Filter to only numeric columns
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        return numeric_cols
+    except Exception as e:
+        print(f"Error getting numeric columns: {e}")
+        return []
+
+
+
+
+
+
+# ===== CALLBACKS =====
+
 # Track tab selection state
 @callback(
     Output('stats-tab-active', 'data'),
@@ -221,38 +238,21 @@ def show_test_container(selected_test):
     
     return {"display": "block"}, lr_style, pca_style, summary_style, empty_output, empty_output, empty_output
 
-# Function to get numeric columns from a table
-def get_numeric_columns(table_name):
-    try:
-        # Get a sample of data to determine column types
-        df = fetch_data_from_sql(f"SELECT TOP 100 * FROM [dbo].[{table_name}]")
-        
-        # Filter to only numeric columns
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        return numeric_cols
-    except Exception as e:
-        print(f"Error getting numeric columns: {e}")
-        return []
-
 # Callback to populate dropdowns with numeric columns
 @callback(
     [Output("lr-x-variable", "options"),
      Output("lr-y-variable", "options"),
      Output("pca-variables", "options"),
      Output("summary-variable", "options")],
-    [Input("stats-table-dropdown", "value")], 
-    State("joined-dataset-store", "data")
+    [Input("stats-table-dropdown", "value")]
 )
-def update_variable_options(selected_table, joined_data):
+def update_variable_options(selected_table):
     if not selected_table:
         empty_options = []
         return empty_options, empty_options, empty_options, empty_options
     
     try:
-        if selected_table == "__joined__" and joined_data:
-            df = pd.DataFrame(cache.get(joined_data))
-        else:
-            df = fetch_data_from_sql(f"SELECT TOP 100 * FROM [dbo].[{selected_table}]")
+        df = fetch_data_from_sql(f"SELECT TOP 100 * FROM [dbo].[{selected_table}]")
 
         if df is None or df.empty:
             return empty_options, empty_options, empty_options, empty_options
@@ -263,7 +263,7 @@ def update_variable_options(selected_table, joined_data):
         return options, options, options, options
     except Exception as e:
         print(f"Error fetching variables: {e}")
-        return [], []
+        return [], [], [], []
 
 # Linear Regression Callback
 @callback(
@@ -271,29 +271,16 @@ def update_variable_options(selected_table, joined_data):
     [Input("run-lr-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("lr-x-variable", "value"),
-     State("lr-y-variable", "value"), 
-     State("joined-dataset-store", "data")],
-     State("use-joined-flag", "data"),
-    prevent_initial_call=True
-)
-def generate_linear_regression(n_clicks, selected_table, x_var, y_var, joined_data, use_joined):
+     State("lr-y-variable", "value")],
+    prevent_initial_call=True)
+def generate_linear_regression(n_clicks, selected_table, x_var, y_var):
     if n_clicks is None or not selected_table or not x_var or not y_var:
         return html.Div()
     
     try:
-        # If join, use cached data
-        if use_joined and joined_data:
-            cached_df = pd.DataFrame(cache.get(joined_data))
-            if cached_df is None:
-                return html.Div([
-                    html.H5("Cache Miss", style={"color": "red"}),
-                    html.P("Cached dataset not found. Please re-run the join or reload data.")
-                ])
-            df = cached_df[[x_var, y_var]].dropna()
-        else:
-            # Fetch the data
-            query = f"SELECT [{x_var}], [{y_var}] FROM [dbo].[{selected_table}] WHERE [{x_var}] IS NOT NULL AND [{y_var}] IS NOT NULL"
-            df = fetch_data_from_sql(query)
+        # Fetch the data
+        query = f"SELECT [{x_var}], [{y_var}] FROM [dbo].[{selected_table}] WHERE [{x_var}] IS NOT NULL AND [{y_var}] IS NOT NULL"
+        df = fetch_data_from_sql(query)
         
         # Check if we have enough data
         if df is None or df.empty:
@@ -421,30 +408,17 @@ def generate_linear_regression(n_clicks, selected_table, x_var, y_var, joined_da
     [Input("run-pca-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("pca-variables", "value"),
-     State("pca-dimensions", "value"),
-     State("joined-dataset-store", "data")],
-    State("use-joined-flag", "data"),
-    prevent_initial_call=True
-)
-def generate_pca(n_clicks, selected_table, variables, dimensions, joined_data, use_joined):
+     State("pca-dimensions", "value")], 
+     prevent_initial_call=True)
+def generate_pca(n_clicks, selected_table, variables, dimensions):
     if n_clicks is None or not selected_table or not variables or len(variables) < 2:
         return html.Div()
     
     try:
         # Fetch the data
-        # If join, use cached data
-        if use_joined and joined_data:
-            cached_df = pd.DataFrame(cache.get(joined_data))
-            if cached_df is None:
-                return html.Div([
-                    html.H5("Cache Miss", style={"color": "red"}),
-                    html.P("Cached dataset not found. Please re-run the join or reload data.")
-                ])
-            df = cached_df
-        else:
-            columns = ", ".join([f"[{var}]" for var in variables])
-            query = f"SELECT {columns} FROM [dbo].[{selected_table}]"
-            df = fetch_data_from_sql(query)
+        columns = ", ".join([f"[{var}]" for var in variables])
+        query = f"SELECT {columns} FROM [dbo].[{selected_table}]"
+        df = fetch_data_from_sql(query)
         
         # Drop rows with NaN values
         df = df.dropna()
@@ -576,33 +550,16 @@ def generate_pca(n_clicks, selected_table, variables, dimensions, joined_data, u
     Output("summary-output", "children", allow_duplicate=True),
     [Input("run-summary-button", "n_clicks")],
     [State("stats-table-dropdown", "value"),
-     State("summary-variable", "value"),
-     State("joined-dataset-store", "data")],
-    State("use-joined-flag", "data"),
-    prevent_initial_call=True
-)
-def generate_summary_statistics(n_clicks, selected_table, variable, joined_data, use_joined):
+     State("summary-variable", "value")],
+     prevent_initial_call=True)
+def generate_summary_statistics(n_clicks, selected_table, variable):
     if n_clicks is None or not selected_table or not variable:
         return html.Div()
     
     try:
-        if use_joined and joined_data:
-            cached_df = pd.DataFrame(cache.get(joined_data))
-            if cached_df is None:
-                return html.Div([
-                    html.H5("Cache Miss", style={"color": "red"}),
-                    html.P("Cached dataset not found. Please re-run the join or reload data.")
-                ])
-            df = cached_df
-            if variable not in df.columns:
-                return html.Div([
-                    html.H5("Column Not Found", style={"color": "red"}),
-                    html.P(f"The variable '{variable}' is not in the joined dataset.")
-                ])
-        else:
-            # Fetch the data
-            query = f"SELECT [{variable}] FROM [dbo].[{selected_table}] WHERE [{variable}] IS NOT NULL"
-            df = fetch_data_from_sql(query)
+        # Fetch the data
+        query = f"SELECT [{variable}] FROM [dbo].[{selected_table}] WHERE [{variable}] IS NOT NULL"
+        df = fetch_data_from_sql(query)
             
         # Check if we have enough data
         if len(df) < 1:
@@ -709,54 +666,3 @@ def generate_summary_statistics(n_clicks, selected_table, variable, joined_data,
             html.P(f"An error occurred: {str(e)}")
         ])
     
-@callback(
-    Output("use-joined-flag", "data"),
-    Output("joined-dataset-status", "children"),
-    Output("use-joined-button", "children"),
-    Input("use-joined-button", "n_clicks"),
-    State("joined-dataset-store", "data"),
-    State("use-joined-flag", "data"),
-    prevent_initial_call=True
-)
-def enable_joined_dataset(n_clicks, joined_data, current_flag):
-    if joined_data is None:
-        return False, "No joined dataset found.", "Use joined dataset"
-    if current_flag is None:
-        current_flag = False
-
-    new_flag = not current_flag
-    if new_flag:
-        label = "Disable Joined Dataset"
-        status_message = "Joined dataset enabled for analysis."
-        print(f'Cache key: {joined_data}')
-    else:
-        label = "Use Joined Dataset"
-        status_message = "Joined dataset disabled."
-
-    return new_flag, status_message, label
-
-@callback(
-    Output("stats-table-dropdown", "value"),
-    Input("use-joined-flag", "data"),
-    State("stats-table-dropdown", "options"),
-    prevent_initial_call=True
-)
-def update_dropdown_on_join_flag(use_joined, table_options):
-    if use_joined:
-        # Set a special placeholder value to signal "joined dataset"
-        # Add cache key to table_options
-        return "__joined__"
-    return dash.no_update
-
-@callback(
-    Output("stats-table-dropdown", "options"),
-    Input("use-joined-flag", "data"),
-    State("joined-dataset-store", "data")
-)
-def update_table_options(use_joined, joined_data):
-    options = [{"label": table, "value": table} for table in table_options]
-    # If the joined dataset is available, add it to options
-    if use_joined and joined_data:
-        options.insert(0, {"label": "Joined Dataset", "value": "__joined__"})
-
-    return options

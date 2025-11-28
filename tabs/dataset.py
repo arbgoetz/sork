@@ -1,25 +1,16 @@
-from dash import dcc, html, Input, Output, State, callback, ctx, ALL, MATCH, dash_table, ClientsideFunction
-import dash_bootstrap_components as dbc
+from dash import dcc, html, Input, Output, State, callback, ctx, ALL, MATCH
 import dash
 from charts import create_database_Table
 from dotenv import load_dotenv
 from database import fetch_data_from_sql
-from tabs.joins import joins_layout
 import os
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 import plotly.express as px
-import json
-import uuid
-from cache_config import cache
+from dash_ag_grid import AgGrid
 
 # Load environment variables
 load_dotenv(override=True)
-
-@cache.memoize(timeout=3600)
-def store_large_df(key, df_dict):
-    print("Storing to cache with key:", key)
-    cache.set(key, df_dict, timeout=3600)
 
 # Table Options
 table_options = os.getenv("TABLE_OPTIONS").split(",")
@@ -32,13 +23,12 @@ dataset_layout = dcc.Tab(
     children=[
         # Store the tab's active state
         dcc.Store(id="dataset-tab-active", data=False),
-        # Store joined dataset
-        dcc.Store(id="joined-dataset-store", storage_type="local"),
-        dcc.Store(id="cached-data-key"),
 
-        html.Br(),
+        # Main Header and Dropdown
+        # html.Br(),
         html.H4("Table View and Figure Generation", style={"marginBottom": "20px"}),
         dcc.Dropdown(table_options, id="dataset_dropdown", placeholder="Table Options"),
+        
         # Column checklist
         html.Div([
             html.Div([
@@ -50,6 +40,7 @@ dataset_layout = dcc.Tab(
                         labelStyle={"display": "block", "marginBottom": "3px"},
                         style={"maxHeight": "200px", "overflowY": "auto", "padding": "10px", "backgroundColor": "#f9f9f9", "borderRadius": "5px"}),
         ], id="columns_container", style={"display": "none", "marginBottom": "15px"}),
+        
         # Row count input
         html.Div([
             html.Label("Number of rows to display:", style={"fontWeight": "bold"}),
@@ -57,6 +48,7 @@ dataset_layout = dcc.Tab(
                     style={"width": "100px", "margin": "10px 0"}),
             html.Span(id="max_rows_info", style={"marginLeft": "10px", "color": "#666", "fontSize": "0.9em"}),
         ], id="row_count_container", style={"display": "none"}),
+        
         # Placeholder message
         html.Div(id="placeholder_message", children=[
             html.H5(
@@ -66,11 +58,37 @@ dataset_layout = dcc.Tab(
             # Error message area
             html.Div(id="dataset-error-message", style={"color": "red", "marginTop": "20px", "fontWeight": "bold"})
         ]),
-        # Data table
-        html.Div(html.Div(id="dataset_container", style={"display": "none"}, children=[
-            html.Div(dcc.Graph(id="dataset", style={"marginBottom": "10px"}),
-                    style={"overflowX": "auto", "width": "100%"})
-        ]), style={"maxHeight": "800px", "overflowY": "auto", "backgroundColor": "#e5ecf6", "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1"}),
+        
+        # Ag-Grid table display
+        html.Div([
+            html.Div([
+                # filter and selection counts
+                html.Span(id='filter_count_text', style={"marginRight": "20px", "fontWeight": "bold"}),
+                html.Span(id='selected_count_text', style={"fontWeight": "bold", "marginRight": "12px"}),
+            ], style={"marginBottom": "8px"}),
+            html.Div(id="dataset_container", style={"display": "none"}, children=[
+                html.Div(
+                    AgGrid(
+                        id='dataset_grid',
+                        rowData=[],
+                        columnDefs=[],
+                        defaultColDef={
+                            'filter': True,
+                            'sortable': True,
+                            'resizable': True,
+                            'minWidth': 50,
+                            'width': 120
+                        },
+                        dashGridOptions={'rowSelection': 'multiple', 'rowMultiSelectWithClick': True},
+                        selectedRows=[],
+                        className='ag-theme-alpine',
+                        style={'width': '100%', 'height': '400px'},
+                        enableEnterpriseModules=False,
+                    ),
+                    style={"overflowX": "auto", "width": "100%"}
+                )
+            ])
+        ], style={"maxHeight": "800px", "overflowY": "auto", "backgroundColor": "#e5ecf6", "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1"}),
         
         # Variable selectors for plotting
         html.Div([
@@ -88,16 +106,129 @@ dataset_layout = dcc.Tab(
         ], id="variable_selector", style={"display": "none", "marginBottom": "15px"}),
         
         # Generate figure button
-        html.Div(html.Button("Generate Figure", id="generate_btn", n_clicks=0, disabled=True),
-                id="generate_button_div", style={"display": "none", "textAlign": "center", "marginBottom": "15px"}),
+        html.Div([
+            html.Button("Generate Figure", id="generate_btn", n_clicks=0, disabled=False,
+                         style={"backgroundColor": "#007bff", "color": "white", "border": "1px solid #e0e0e0", "borderRadius": "8px", "padding": "3px 8px", "cursor": "pointer"}),
+            html.Span("", id="generate_info", style={"marginLeft": "10px", "fontWeight": "normal", "color": "#444"})
+        ], id="generate_button_div", style={"display": "none", "textAlign": "center", "marginBottom": "15px"}),
+        
+        # Warning area for Generate actiond
+        html.Div(id='generate_warning', children="", style={"textAlign": "center", "marginBottom": "10px"}),
+        
         # Figure output
         html.Div(id="figure_div", style={"display": "none"}, children=[
             dcc.Loading(dcc.Graph(id="figure_graph"), type="default")
         ]),
+       
         # Footer spacer
         html.Div(style={"height": "50px", "backgroundColor": "#e5ecf6", "width": "100%", "marginTop": "10px", "borderTop": "1px solid #d1d1d1", "borderRadius": "0 0 5px 5px"}),
     ]
 )
+
+
+
+# ====== HELPERS ======
+# Apply filter model to DataFrame
+def apply_filter_model(df, filter_model):
+    for field, model in (filter_model or {}).items():
+        if field not in df.columns:
+            continue
+        # Text filter
+        if model.get('filterType') == 'text' or isinstance(df[field].dtype, object):
+            fval = str(model.get('filter', ''))
+            ftype = model.get('type', 'contains')
+            if ftype == 'contains':
+                df = df[df[field].astype(str).str.contains(fval, na=False, case=False)]
+            elif ftype == 'equals':
+                df = df[df[field].astype(str) == fval]
+            elif ftype == 'notEqual':
+                df = df[df[field].astype(str) != fval]
+            elif ftype == 'startsWith':
+                df = df[df[field].astype(str).str.startswith(fval, na=False)]
+            elif ftype == 'endsWith':
+                df = df[df[field].astype(str).str.endswith(fval, na=False)]
+            else:
+                # Default to contains
+                df = df[df[field].astype(str).str.contains(fval, na=False, case=False)]
+        else:
+            # Numeric filter
+            comp = model.get('type')
+            val = model.get('filter')
+            if val is None:
+                continue
+            val = float(val)
+            if comp == 'lessThan':
+                df = df[pd.to_numeric(df[field], errors='coerce') < val]
+            elif comp == 'lessThanOrEqual':
+                df = df[pd.to_numeric(df[field], errors='coerce') <= val]
+            elif comp == 'greaterThan':
+                df = df[pd.to_numeric(df[field], errors='coerce') > val]
+            elif comp == 'greaterThanOrEqual':
+                df = df[pd.to_numeric(df[field], errors='coerce') >= val]
+            elif comp == 'equals':
+                df = df[pd.to_numeric(df[field], errors='coerce') == val]
+            elif comp == 'notEqual':
+                df = df[pd.to_numeric(df[field], errors='coerce') != val]
+    return df
+
+# Get data for plotting based on priority
+def _get_data_for_plotting(selected_table, x_var, y_var, row_count, 
+                           row_data, selected_rows, filter_model):
+    """Get DataFrame for plotting with priority: selected > filtered > all > SQL."""
+    
+    # Priority 1: Use user-selected rows if any
+    if selected_rows and len(selected_rows) > 0:
+        return pd.DataFrame(selected_rows)
+    
+    # Priority 2: Apply filter model to grid data if filters exist
+    if row_data and filter_model:
+        df = pd.DataFrame(row_data)
+        df_filtered = apply_filter_model(df, filter_model)
+        if not df_filtered.empty:
+            return df_filtered
+    
+    # Priority 3: Use all grid data
+    if row_data:
+        return pd.DataFrame(row_data)
+    
+    # Priority 4: Fetch from SQL as fallback
+    if selected_table:
+        query = f"SELECT TOP {row_count} [{x_var}], [{y_var}] FROM [dbo].[{selected_table}]"
+        df = fetch_data_from_sql(query)
+        return df[[x_var, y_var]].dropna() if df is not None else None
+    
+    return None
+
+# Create figure based on variable types
+def _create_figure_by_type(df, x_var, y_var):
+    """Create appropriate visualization(s) based on variable types."""
+    
+    x_is_numeric = is_numeric_dtype(df[x_var])
+    y_is_numeric = is_numeric_dtype(df[y_var])
+    
+    # Case 1: Both numeric -> scatter plot
+    if x_is_numeric and y_is_numeric:
+        fig = px.scatter(df, x=x_var, y=y_var, title=f"{x_var} vs {y_var}")
+        return dcc.Graph(figure=fig)
+    
+    # Case 2: One numeric, one categorical -> bar chart
+    if x_is_numeric or y_is_numeric:
+        numeric_var = x_var if x_is_numeric else y_var
+        categorical_var = y_var if x_is_numeric else x_var
+        
+        df_agg = df.groupby(categorical_var)[numeric_var].mean().reset_index()
+        fig = px.bar(df_agg, x=categorical_var, y=numeric_var, 
+                     title=f"Mean {numeric_var} by {categorical_var}")
+        return dcc.Graph(figure=fig)
+    
+    # Case 3: Both categorical -> grouped bar + heatmap
+    fig_bar = px.bar(df, x=x_var, color=y_var, barmode='group', 
+                     title=f"{x_var} by {y_var}")
+    fig_heat = px.density_heatmap(df, x=x_var, y=y_var, 
+                                   title=f"Heatmap of {x_var} vs {y_var}")
+    
+    return [dcc.Graph(figure=fig_bar), dcc.Graph(figure=fig_heat)]
+
 
 
 
@@ -210,12 +341,12 @@ def update_row_count_info(selected_table):
 
 # Update data table based on selections
 @callback(
-    [Output('dataset', 'figure'), 
+    [Output('dataset_grid', 'rowData'), 
+     Output('dataset_grid', 'columnDefs'), 
      Output('row_count_container', 'style'),
      Output('placeholder_message', 'style'), 
      Output('dataset_container', 'style'),
-     Output('variable_selector', 'style'), 
-     Output('generate_button_div', 'style')],
+     Output('variable_selector', 'style')],
     [Input('dataset_dropdown', 'value'), 
      Input('options', 'value'), 
      Input('row_count', 'value')],
@@ -224,7 +355,7 @@ def update_row_count_info(selected_table):
 def update_output(selected_table, selected_columns, row_count, column_options):
     no_display = {"display": "none"}
     if selected_table is None:
-        return {}, no_display, {"display": "block"}, no_display, no_display, no_display
+        return [], [], no_display, {"display": "block"}, no_display, no_display
     if not selected_columns:
         cols = [opt['value'] for opt in column_options]
     else:
@@ -237,9 +368,70 @@ def update_output(selected_table, selected_columns, row_count, column_options):
         row_count = min(row_count, total)
     except:
         pass
-    table_index = table_options.index(selected_table)
-    fig_table = create_database_Table(table_index, cols, row_count)
-    return fig_table, {"display": "block", "margin": "10px 0"}, {"display": "none"}, {"display": "block"}, {"display": "block", "marginBottom": "15px"}, {"display": "block"}
+
+    # Fetch data slice for AG Grid
+    try:
+        cols_sql = ", ".join([f"[{c}]" for c in cols]) if cols else "*"
+        query = f"SELECT TOP {row_count} {cols_sql} FROM [dbo].[{selected_table}]"
+        df = fetch_data_from_sql(query)
+        row_data = df.to_dict('records')
+
+        column_defs = []
+        # checkbox column pinned to left
+        column_defs.append({
+            'headerName': '',
+            'field': '__select__',
+            'checkboxSelection': True,
+            'headerCheckboxSelection': True,
+            'pinned': 'left',
+            'width': 50,
+            'sortable': False,
+            'filter': False
+        })
+
+        # choose an appropriate filter options based on column data type
+        for c in df.columns:
+            col_series = df[c]
+            is_num = False
+            # determine if column is numeric
+            try:
+                if is_numeric_dtype(col_series):
+                    is_num = True
+                else:
+                    # try coercing a small sample to detect numbers
+                    sample = pd.to_numeric(col_series.dropna().head(200), errors='coerce')
+                    if len(sample) > 0 and sample.notna().sum() / float(len(sample)) >= 0.5:
+                        is_num = True
+            except Exception:
+                is_num = False
+
+            if is_num:
+                col_def = {
+                    'headerName': c,
+                    'field': c,
+                    'filter': 'agNumberColumnFilter',
+                    'filterParams': {
+                        'filterOptions': ['equals', 'notEqual', 'lessThan', 'lessThanOrEqual', 'greaterThan', 'greaterThanOrEqual'],
+                        'suppressAndOrCondition': True
+                    }
+                }
+            else:
+                col_def = {
+                    'headerName': c,
+                    'field': c,
+                    'filter': 'agTextColumnFilter',
+                    'filterParams': {
+                        'filterOptions': ['contains','notContains','equals','notEqual','startsWith','endsWith'],
+                        'suppressAndOrCondition': True
+                    }
+                }
+
+            column_defs.append(col_def)
+    except Exception as e:
+        print(f"Error fetching table data for AgGrid: {e}")
+        row_data, column_defs = [], []
+
+    return row_data, column_defs, {"display": "block", "margin": "10px 0"}, {"display": "none"}, {"display": "block"}, {"display": "block", "marginBottom": "15px"}
 
 # Enable/disable Generate Figure button based on variable selection
 @callback(
@@ -252,47 +444,60 @@ def toggle_generate_button(x_var, y_var):
 # Generate figure based on variable types
 @callback(
     [Output('figure_div', 'children', allow_duplicate=True), 
-     Output('figure_div', 'style', allow_duplicate=True)],
-     Input('generate_btn', 'n_clicks'),
-     State('dataset_dropdown', 'value'),
-     State('x_variable_dropdown', 'value'),
-     State('y_variable_dropdown', 'value'),
-     State('row_count', 'value'),
+     Output('figure_div', 'style', allow_duplicate=True),
+     Output('generate_warning', 'children', allow_duplicate=True)],
+    Input('generate_btn', 'n_clicks'),
+    State('dataset_dropdown', 'value'),
+    State('x_variable_dropdown', 'value'),
+    State('y_variable_dropdown', 'value'),
+    State('row_count', 'value'),
+    State('dataset_grid', 'rowData'), 
+    State('dataset_grid', 'selectedRows'), 
+    State('dataset_grid', 'filterModel'),
     prevent_initial_call=True
 )
-def generate_figure(n_clicks, selected_table, x_var, y_var, row_count):
-    if not n_clicks or n_clicks == 0 or selected_table is None or x_var is None or y_var is None:
-        return [], {"display": "none"}
+def generate_figure(n_clicks, selected_table, x_var, y_var, row_count, row_data, selected_rows, filter_model):
+    """Generate appropriate visualization based on selected variables and data."""
     
-    # Generate different data frame if the joined one is stored
-    if selected_table:
-        col1, col2 = x_var, y_var
-        query = f"SELECT TOP {row_count} [{col1}], [{col2}] FROM [dbo].[{selected_table}]"
-        df = fetch_data_from_sql(query)[[col1, col2]].dropna()
+    # Validate inputs
+    if not n_clicks or n_clicks == 0 or selected_table is None:
+        return [], {"display": "none"}, ""
+    
+    if x_var is None or y_var is None:
+        return [], {"display": "none"}, "Warning: Please select an X and Y variable"
+    
+    # Get data with priority: selected rows > filtered rows > all rows > SQL fetch
+    df = _get_data_for_plotting(selected_table, x_var, y_var, row_count, 
+                                 row_data, selected_rows, filter_model)
+    
+    if df is None or df.empty:
+        return [], {"display": "none"}, "Warning: No data available for plotting"
+    
+    # Generate appropriate figure based on variable types
+    graphs = _create_figure_by_type(df, x_var, y_var)
+    
+    return graphs, {"display": "block"}, ""
+
+# Update filtered and selected row counts
+@callback(
+    [Output('filter_count_text', 'children'), 
+     Output('selected_count_text', 'children')],
+    [Input('dataset_grid', 'rowData'), 
+     Input('dataset_grid', 'selectedRows'), 
+     Input('dataset_grid', 'filterModel')]
+)
+def update_table_counts(row_data, selected_rows, filter_model):
+    if not row_data:
+        return "", ""
+    
+    df = pd.DataFrame(row_data)
+
+    if filter_model:
+        filtered = apply_filter_model(df, filter_model)
     else:
-        return [], {"display": "none"}
-    
-    num1, num2 = is_numeric_dtype(df[col1]), is_numeric_dtype(df[col2])
-    
-    if num1 and num2:
-        fig = px.scatter(df, x=col1, y=col2, title=f"{col1} vs {col2}")
-        graph = dcc.Graph(figure=fig)
-        return graph, {"display": "block"}
-    if num1 and not num2:
-        num, cat = col1, col2
-    elif num2 and not num1:
-        num, cat = col2, col1
-    else:
-        num = cat = None
-    
-    if num and cat:
-        df_agg = df.groupby(cat)[num].mean().reset_index()
-        fig = px.bar(df_agg, x=cat, y=num, title=f"Mean {num} by {cat}")
-        graph = dcc.Graph(figure=fig)
-        return graph, {"display": "block"}
-    
-    fig_bar = px.bar(df, x=col1, color=col2, barmode='group', title=f"{col1} by {col2}")
-    fig_heat = px.density_heatmap(df, x=col1, y=col2, title=f"Heatmap of {col1} vs {col2}")
-    graph1 = dcc.Graph(figure=fig_bar)
-    graph2 = dcc.Graph(figure=fig_heat)
-    return [graph1, graph2], {"display": "block"}
+        filtered = df
+
+    filtered_count = len(filtered)
+    selected_count = len(selected_rows) if selected_rows else 0
+
+    return f"Filtered rows: {filtered_count}", f"Selected rows: {selected_count}"
