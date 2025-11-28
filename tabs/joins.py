@@ -1,8 +1,10 @@
-from dash import dcc, html, Input, Output, State, callback, dash_table, ctx
+from dash import dcc, html, Input, Output, State, callback, ctx
 import dash
 from dotenv import load_dotenv
 from database import fetch_data_from_sql
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
+from dash_ag_grid import AgGrid
 
 # Load environment variables
 load_dotenv(override=True)
@@ -162,40 +164,37 @@ joins_layout = dcc.Tab(
                 dcc.Loading(children=[
                     html.Div([
                     html.H4("Results", style={"marginBottom": "15px", "color": "#133817"}),
+                    
+                    # Filter and selection counts
                     html.Div([
-                        # DataTable in layout so callbacks can reference it
-                        dash_table.DataTable(
-                            id="join-tab-datatable",
-                            data=[],
-                            columns=[],
-                            page_size=25,
-                            page_action="native",
-                            filter_action="native",
-                            sort_action="native",
-                            sort_mode="multi",
-                            style_table={"overflowX": "auto"},
-                            style_cell={
-                                "textAlign": "left",
-                                "padding": "10px",
-                                "fontSize": "12px",
-                            },
-                            style_header={
-                                "backgroundColor": "#f0f0f0",
-                                "fontWeight": "bold",
-                                "textAlign": "center",
-                            },
-                            style_data={
-                                "whiteSpace": "normal",
-                                "height": "auto",
-                            },
-                            style_data_conditional=[
-                                {
-                                    "if": {"row_index": "odd"},
-                                    "backgroundColor": "#f9f9f9",
-                                }
-                            ],
+                        html.Span(id='join-filter-count-text', style={"marginRight": "20px", "fontWeight": "bold"}),
+                        html.Span(id='join-selected-count-text', style={"fontWeight": "bold", "marginRight": "12px"}),
+                    ], style={"marginBottom": "8px"}),
+                    
+                    # AG Grid table
+                    html.Div([
+                        html.Div(
+                            AgGrid(
+                                id='join-tab-grid',
+                                rowData=[],
+                                columnDefs=[],
+                                defaultColDef={
+                                    'filter': True,
+                                    'sortable': True,
+                                    'resizable': True,
+                                    'minWidth': 50,
+                                    'width': 120
+                                },
+                                dashGridOptions={'rowSelection': 'multiple', 'rowMultiSelectWithClick': True},
+                                selectedRows=[],
+                                className='ag-theme-alpine',
+                                style={'width': '100%', 'height': '500px'},
+                                enableEnterpriseModules=False,
+                            ),
+                            style={"overflowX": "auto", "width": "100%"}
                         )
-                    ], id="join-tab-results-table"),
+                    ], style={"maxHeight": "600px", "overflowY": "auto", "backgroundColor": "#e5ecf6", 
+                             "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1", "marginBottom": "15px"}),
                     html.Div([
                         html.Div(id="join-tab-results-stats", style={"marginTop": "15px", "color": "#666", "fontSize": "0.95em"}),
                         html.Div([
@@ -261,6 +260,55 @@ joins_layout = dcc.Tab(
     ]
 ) 
 
+
+
+# ====== HELPERS ======
+def apply_filter_model(df, filter_model):
+    """Apply AG Grid filter model to a DataFrame"""
+    for field, model in (filter_model or {}).items():
+        if field not in df.columns:
+            continue
+        # Text filter
+        if model.get('filterType') == 'text' or isinstance(df[field].dtype, object):
+            fval = str(model.get('filter', ''))
+            ftype = model.get('type', 'contains')
+            if ftype == 'contains':
+                df = df[df[field].astype(str).str.contains(fval, na=False, case=False)]
+            elif ftype == 'equals':
+                df = df[df[field].astype(str) == fval]
+            elif ftype == 'notEqual':
+                df = df[df[field].astype(str) != fval]
+            elif ftype == 'startsWith':
+                df = df[df[field].astype(str).str.startswith(fval, na=False)]
+            elif ftype == 'endsWith':
+                df = df[df[field].astype(str).str.endswith(fval, na=False)]
+            else:
+                # Default to contains
+                df = df[df[field].astype(str).str.contains(fval, na=False, case=False)]
+        else:
+            # Numeric filter
+            comp = model.get('type')
+            val = model.get('filter')
+            if val is None:
+                continue
+            val = float(val)
+            if comp == 'lessThan':
+                df = df[pd.to_numeric(df[field], errors='coerce') < val]
+            elif comp == 'lessThanOrEqual':
+                df = df[pd.to_numeric(df[field], errors='coerce') <= val]
+            elif comp == 'greaterThan':
+                df = df[pd.to_numeric(df[field], errors='coerce') > val]
+            elif comp == 'greaterThanOrEqual':
+                df = df[pd.to_numeric(df[field], errors='coerce') >= val]
+            elif comp == 'equals':
+                df = df[pd.to_numeric(df[field], errors='coerce') == val]
+            elif comp == 'notEqual':
+                df = df[pd.to_numeric(df[field], errors='coerce') != val]
+    return df
+
+
+
+# ====== CALLBACKS ======
 # Track tab selection state
 @callback(
     Output('joins-tab-active', 'data'),
@@ -288,8 +336,8 @@ def set_tab_active(tab_value):
      Output('join-tab-preview-container', 'style', allow_duplicate=True),
      Output('join-tab-preview', 'children', allow_duplicate=True),
      Output('join-tab-full-data', 'data', allow_duplicate=True),
-     Output('join-tab-datatable', 'data', allow_duplicate=True),
-     Output('join-tab-datatable', 'columns', allow_duplicate=True),
+     Output('join-tab-grid', 'rowData', allow_duplicate=True),
+     Output('join-tab-grid', 'columnDefs', allow_duplicate=True),
      Output('join-tab-csv-filename', 'value', allow_duplicate=True),
      Output('join-total-count', 'data', allow_duplicate=True)],
     [Input('joins-tab-active', 'data')],
@@ -492,8 +540,8 @@ def update_join_preview(core_table, core_vars, tree_vars, garden_vars):
 @callback(
     [
         Output("join-tab-results-div", "style", allow_duplicate=True),
-        Output("join-tab-datatable", "data"),  # Update DataTable data
-        Output("join-tab-datatable", "columns"),  # Update DataTable columns
+        Output("join-tab-grid", "rowData"),  # Update AG Grid rowData
+        Output("join-tab-grid", "columnDefs"),  # Update AG Grid columnDefs
         Output("join-tab-results-stats", "children", allow_duplicate=True),
         Output("join-tab-full-data", "data"),  # Store full dataframe
         Output("join-tab-csv-filename", "value", allow_duplicate=True),  # Set default filename
@@ -597,13 +645,67 @@ FROM [dbo].[{core_table}] core
         if result_df is None or result_df.empty:
             return {"display": "none"}, [], [], "", None, dash.no_update, dash.no_update, dash.no_update, 0
 
-        # 8) Prepare data for the table with filtering and sorting enabled
+        # 8) Prepare data for the AG Grid table with filtering and sorting enabled
         # Store full dataframe (limit to 10000 rows for performance in display)
         display_df = result_df.head(10000) if len(result_df) > 10000 else result_df
         
-        # Prepare data and columns for DataTable
-        table_data = display_df.to_dict("records")
-        table_columns = [{"name": c, "id": c} for c in display_df.columns]
+        # Prepare data for AG Grid
+        row_data = display_df.to_dict("records")
+        
+        # Create columnDefs with appropriate filters based on data type
+        column_defs = []
+        
+        # Add checkbox column pinned to left
+        column_defs.append({
+            'headerName': '',
+            'field': '__select__',
+            'checkboxSelection': True,
+            'headerCheckboxSelection': True,
+            'pinned': 'left',
+            'width': 50,
+            'sortable': False,
+            'filter': False
+        })
+        
+        # Add column definitions with appropriate filters
+        for c in display_df.columns:
+            col_series = display_df[c]
+            is_num = False
+            
+            # Determine if column is numeric
+            try:
+                if is_numeric_dtype(col_series):
+                    is_num = True
+                else:
+                    # Try coercing a small sample to detect numbers
+                    sample = pd.to_numeric(col_series.dropna().head(200), errors='coerce')
+                    if len(sample) > 0 and sample.notna().sum() / float(len(sample)) >= 0.5:
+                        is_num = True
+            except Exception:
+                is_num = False
+            
+            if is_num:
+                col_def = {
+                    'headerName': c,
+                    'field': c,
+                    'filter': 'agNumberColumnFilter',
+                    'filterParams': {
+                        'filterOptions': ['equals', 'notEqual', 'lessThan', 'lessThanOrEqual', 'greaterThan', 'greaterThanOrEqual'],
+                        'suppressAndOrCondition': True
+                    }
+                }
+            else:
+                col_def = {
+                    'headerName': c,
+                    'field': c,
+                    'filter': 'agTextColumnFilter',
+                    'filterParams': {
+                        'filterOptions': ['contains','notContains','equals','notEqual','startsWith','endsWith'],
+                        'suppressAndOrCondition': True
+                    }
+                }
+            
+            column_defs.append(col_def)
         
         # Store column info for stats
         total_rows = len(result_df)
@@ -615,10 +717,10 @@ FROM [dbo].[{core_table}] core
         # Generate default filename based on core table name
         default_filename = CORE_TABLES.get(core_table, "joined_data").lower().replace(" ", "_").replace("/", "_")
         
-        filtered_btn_text = f"Download Filtered Dataset ({len(result_df):,} rows)" #### ATTENTION, has a maximum of 10,000 rows, incorrect
+        filtered_btn_text = f"Download Filtered Dataset ({len(display_df):,} rows)"
         full_btn_text = f"Download Full Dataset ({total_rows:,} rows)"
 
-        return {"display": "block"}, table_data, table_columns, stats_text, full_data_json, default_filename, filtered_btn_text, full_btn_text, total_rows
+        return {"display": "block"}, row_data, column_defs, stats_text, full_data_json, default_filename, filtered_btn_text, full_btn_text, total_rows
 
     except Exception as e:
         err = f"Error executing join: {e}"
@@ -637,67 +739,97 @@ def reset_results_on_selection_change(core_vars, tree_vars, garden_vars):
     # Hide results whenever selections change
     return [{"display": "none"}]
 
-# Update stats when filtering/sorting changes
+# Update filter and selection counts for AG Grid
 @callback(
-    [Output("join-tab-results-stats", "children", allow_duplicate=True),
-     Output("download-join-tab-csv-button", "children", allow_duplicate=True),
+    [Output('join-filter-count-text', 'children'), 
+     Output('join-selected-count-text', 'children')],
+    [Input('join-tab-grid', 'rowData'), 
+     Input('join-tab-grid', 'selectedRows'), 
+     Input('join-tab-grid', 'filterModel')]
+)
+def update_join_table_counts(row_data, selected_rows, filter_model):
+    """Update the filtered and selected row counts for AG Grid"""
+    if not row_data:
+        return "", ""
+    
+    df = pd.DataFrame(row_data)
+
+    if filter_model:
+        filtered = apply_filter_model(df, filter_model)
+    else:
+        filtered = df
+
+    filtered_count = len(filtered)
+    selected_count = len(selected_rows) if selected_rows else 0
+
+    return f"Filtered rows: {filtered_count}", f"Selected rows: {selected_count}"
+
+# Update download button text based on filtering
+@callback(
+    [Output("download-join-tab-csv-button", "children", allow_duplicate=True),
      Output("download-join-tab-all-csv-button", "children", allow_duplicate=True)],
-    [Input("join-tab-datatable", "derived_virtual_data"),
+    [Input('join-tab-grid', 'rowData'),
+     Input('join-tab-grid', 'filterModel'),
      Input("join-total-count", "data")],
     prevent_initial_call=True
 )
-def update_filtered_stats(filtered_data, total_count):
-    # Handle case where DataTable doesn't exist yet or data is missing
-    if filtered_data is None:
-        return dash.no_update
+def update_download_buttons(row_data, filter_model, total_count):
+    """Update download button text based on current filter state"""
+    if not row_data or not total_count:
+        return dash.no_update, dash.no_update
     
     try:
-        filtered_count = len(filtered_data)
-        total_count = total_count if total_count else 0
+        df = pd.DataFrame(row_data)
         
-        if total_count == 0:
-            return dash.no_update
-        
-        # Extract column info from original stats format if available
-        # For now, just show row counts - column info is less critical for filtered view
-        if filtered_count >= total_count or filtered_count == 10000: # 10000 is the limit
-             stats_text = f"Showing all {total_count:,} rows"
-             filtered_btn_text = f"Download Filtered Dataset ({total_count:,} rows)"
+        if filter_model:
+            filtered = apply_filter_model(df, filter_model)
+            filtered_count = len(filtered)
         else:
-             stats_text = f"Filtered down to {filtered_count:,} of {total_count:,} rows"
-             filtered_btn_text = f"Download Filtered Dataset ({filtered_count:,} rows)"
+            filtered_count = len(df)
+        
+        # Check if we're showing all data or if it's filtered
+        if filtered_count >= total_count or filtered_count == len(df):
+            filtered_btn_text = f"Download Filtered Dataset ({total_count:,} rows)"
+        else:
+            filtered_btn_text = f"Download Filtered Dataset ({filtered_count:,} rows)"
         
         full_btn_text = f"Download Full Dataset ({total_count:,} rows)"
         
-        return stats_text, filtered_btn_text, full_btn_text
+        return filtered_btn_text, full_btn_text
     except Exception as e:
-        print(f"Error updating stats: {e}")
-        return dash.no_update
+        print(f"Error updating download buttons: {e}")
+        return dash.no_update, dash.no_update
 
-# Download filtered/sorted data from DataTable
+# Download filtered/sorted data from AG Grid
 @callback(
     Output('download-join-tab-csv', 'data'),
     Input('download-join-tab-csv-button', 'n_clicks'),
-    [State('join-tab-datatable', 'derived_virtual_data'),  # Get filtered/sorted data
-     State('join-tab-full-data', 'data'),  # Fallback to full data if filtered not available
+    [State('join-tab-grid', 'rowData'),  # Get current grid data
+     State('join-tab-grid', 'selectedRows'),  # Get selected rows
+     State('join-tab-grid', 'filterModel'),  # Get filter model
+     State('join-tab-full-data', 'data'),  # Fallback to full data
      State('join-tab-csv-filename', 'value')],  # Get custom filename
     prevent_initial_call=True
 )
-def download_filtered_join_results(n_clicks, filtered_data, full_data, custom_filename):
+def download_filtered_join_results(n_clicks, row_data, selected_rows, filter_model, full_data, custom_filename):
     if not n_clicks:
         return dash.no_update
     
     try:
-        # Use filtered data if available, otherwise use full data
-        # If filtered data length matches the view limit (10000), assume it's unfiltered and use full data
-        view_limit = 10000
-        total_count = len(full_data) if full_data else 0
-        current_view_count = min(total_count, view_limit)
-        
-        if filtered_data and len(filtered_data) == current_view_count:
-            data_to_download = full_data
+        # Priority 1: Use selected rows if any
+        if selected_rows and len(selected_rows) > 0:
+            data_to_download = selected_rows
+        # Priority 2: Use filtered data if filters are applied
+        elif row_data and filter_model:
+            df = pd.DataFrame(row_data)
+            filtered_df = apply_filter_model(df, filter_model)
+            data_to_download = filtered_df.to_dict('records')
+        # Priority 3: Use all grid data
+        elif row_data:
+            data_to_download = row_data
+        # Priority 4: Use full data as fallback
         else:
-            data_to_download = filtered_data if filtered_data else full_data
+            data_to_download = full_data
         
         if not data_to_download:
             return dash.no_update
@@ -712,11 +844,11 @@ def download_filtered_join_results(n_clicks, filtered_data, full_data, custom_fi
             # Clean filename (remove invalid characters)
             clean_filename = "".join(c for c in custom_filename.strip() if c.isalnum() or c in (' ', '-', '_')).strip()
             if not clean_filename:
-                clean_filename = "joined_data_filtered" if filtered_data and filtered_data != full_data else "joined_data"
+                clean_filename = "joined_data"
             filename = f"{clean_filename}.csv"
         else:
-            # Default filename based on whether it's filtered
-            filename = "joined_data_filtered.csv" if filtered_data and filtered_data != full_data else "joined_data.csv"
+            # Default filename
+            filename = "joined_data.csv"
         
         # Trigger download
         return dcc.send_data_frame(
