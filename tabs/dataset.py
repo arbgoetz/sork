@@ -59,35 +59,33 @@ dataset_layout = dcc.Tab(
         ]),
         
         # Ag-Grid table display
-        html.Div([
+        html.Div(id="dataset_container", style={"display": "none", "maxHeight": "800px", "overflowY": "auto", "backgroundColor": "#e5ecf6", "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1"}, children=[
+            # filter and selection counts
             html.Div([
-                # filter and selection counts
                 html.Span(id='filter_count_text', style={"marginRight": "20px", "fontWeight": "bold"}),
                 html.Span(id='selected_count_text', style={"fontWeight": "bold", "marginRight": "12px"}),
             ], style={"marginBottom": "8px"}),
-            html.Div(id="dataset_container", style={"display": "none"}, children=[
-                html.Div(
-                    AgGrid(
-                        id='dataset_grid',
-                        rowData=[],
-                        columnDefs=[],
-                        defaultColDef={
-                            'filter': True,
-                            'sortable': True,
-                            'resizable': True,
-                            'minWidth': 50,
-                            'width': 120
-                        },
-                        dashGridOptions={'rowSelection': 'multiple', 'rowMultiSelectWithClick': True},
-                        selectedRows=[],
-                        className='ag-theme-alpine',
-                        style={'width': '100%', 'height': '400px'},
-                        enableEnterpriseModules=False,
-                    ),
-                    style={"overflowX": "auto", "width": "100%"}
-                )
-            ])
-        ], style={"maxHeight": "800px", "overflowY": "auto", "backgroundColor": "#e5ecf6", "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1"}),
+            html.Div(
+                AgGrid(
+                    id='dataset_grid',
+                    rowData=[],
+                    columnDefs=[],
+                    defaultColDef={
+                        'filter': True,
+                        'sortable': True,
+                        'resizable': True,
+                        'minWidth': 50,
+                        'width': 120
+                    },
+                    dashGridOptions={'rowSelection': 'multiple', 'rowMultiSelectWithClick': True},
+                    selectedRows=[],
+                    className='ag-theme-alpine',
+                    style={'width': '100%', 'height': '400px'},
+                    enableEnterpriseModules=False,
+                ),
+                style={"overflowX": "auto", "width": "100%"}
+            )
+        ]),
         
         # Variable selectors for plotting
         html.Div([
@@ -118,9 +116,6 @@ dataset_layout = dcc.Tab(
         html.Div(id="figure_div", style={"display": "none"}, children=[
             dcc.Loading(dcc.Graph(id="figure_graph"), type="default")
         ]),
-       
-        # Footer spacer
-        html.Div(style={"height": "50px", "backgroundColor": "#e5ecf6", "width": "100%", "marginTop": "10px", "borderTop": "1px solid #d1d1d1", "borderRadius": "0 0 5px 5px"}),
     ]
 )
 
@@ -431,7 +426,7 @@ def update_output(selected_table, selected_columns, row_count, column_options):
         print(f"Error fetching table data for AgGrid: {e}")
         row_data, column_defs = [], []
 
-    return row_data, column_defs, {"display": "block", "margin": "10px 0"}, {"display": "none"}, {"display": "block"}, {"display": "block", "marginBottom": "15px"}, {"display": "block"}
+    return row_data, column_defs, {"display": "block", "margin": "10px 0"}, {"display": "none"}, {"display": "block", "maxHeight": "800px", "overflowY": "auto", "backgroundColor": "#e5ecf6", "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1"}, {"display": "block", "marginBottom": "15px"}, {"display": "block"}
 
 # Generate figure based on variable types
 @callback(
