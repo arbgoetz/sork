@@ -214,14 +214,14 @@ stats_layout = dcc.Tab(
 
 # ===== HELPERS =====
 
+# Validate table name against whitelist
 def validate_table_name(table_name):
-    """Validate table name against whitelist."""
     if table_name not in ALLOWED_TABLES:
         raise ValueError(f"Invalid table name: {table_name}")
     return table_name
 
+# Get approximate row count using sys.partitions
 def get_table_row_count(table_name):
-    """Get approximate row count using sys.partitions (fast)."""
     try:
         validate_table_name(table_name)
         query = f"""
@@ -239,8 +239,8 @@ def get_table_row_count(table_name):
         print(f"Error fetching row count for {table_name}: {e}")
         return None
 
+# Get numeric column names from INFORMATION_SCHEMA
 def get_numeric_column_names(table_name):
-    """Get numeric column names from INFORMATION_SCHEMA."""
     try:
         validate_table_name(table_name)
         query = f"""
@@ -264,8 +264,8 @@ def get_numeric_column_names(table_name):
         print(f"Error fetching numeric columns for {table_name}: {e}")
         return []
 
+# Calculate appropriate sample size based on total rows
 def calculate_sample_size(total_rows):
-    """Calculate appropriate sample size based on total rows."""
     if total_rows <= MIN_SAMPLE_SIZE:
         return total_rows  # Use all data
     elif total_rows <= 100000:
@@ -273,8 +273,8 @@ def calculate_sample_size(total_rows):
     else:
         return DEFAULT_SAMPLE_SIZE  # 50K sample for large tables
 
+# Format sample size information for display
 def format_sample_info(sample_size, total_rows):
-    """Format sample size information for display."""
     if sample_size >= total_rows:
         return f"✓ Analysis based on all {total_rows:,} rows"
     else:
@@ -591,7 +591,7 @@ def generate_linear_regression(n_clicks_sample, n_clicks_full, selected_table, x
             dcc.Graph(figure=fig),
             stats_table,
             sample_info
-        ])
+        ], style={"padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"})
         
         # Show button only if sample was used
         show_button = (len(df) < total_rows and not use_full_dataset)
@@ -790,7 +790,7 @@ def generate_pca(n_clicks_sample, n_clicks_full, selected_table, variables, dime
             variance_table,
             loadings_table,
             sample_info
-        ])
+        ], style={"padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"})
         
         # Show button only if sample was used
         show_button = (len(df) < total_rows and not use_full_dataset)
@@ -951,7 +951,7 @@ def generate_summary_statistics(n_clicks_sample, n_clicks_full, selected_table, 
             dcc.Graph(figure=fig_hist, style={"marginBottom": "20px"}),
             stats_table,
             sample_info
-        ])
+        ], style={"padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"})
         
         # Show button only if sample was used
         show_button = (len(data) < total_rows and not use_full_dataset)

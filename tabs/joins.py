@@ -1,4 +1,5 @@
 from dash import dcc, html, Input, Output, State, callback, ctx
+from dash.exceptions import PreventUpdate
 import dash
 from dotenv import load_dotenv
 from database import fetch_data_from_sql
@@ -9,16 +10,25 @@ from dash_ag_grid import AgGrid
 # Load environment variables
 load_dotenv(override=True)
 
-CORE_TABLES={
+# ===== CONFIGURATION CONSTANTS =====
+
+# Type detection
+TYPE_DETECTION_SAMPLE_SIZE = 200
+NUMERIC_THRESHOLD = 0.5
+
+# Table definitions
+CORE_TABLES = {
     "db_main": "Growth/Survival",
     "budburst_detailed_all": "All Budburst Stages",
     "biomass_destructive_2021": "Biomass",
     "leaf_traits_2016": "Leaf traits",
 }
 
-MATERNAL_TREE_TABLE="Valley oak maternal tree climate data BCM 2018_03_08"
+MATERNAL_TREE_TABLE = "Valley oak maternal tree climate data BCM 2018_03_08"
+GARDENS_TABLE = "gardens_20152023prismmonthly"
 
-GARDENS_TABLE="gardens_20152023prismmonthly"
+# Whitelists for validation
+ALLOWED_CORE_TABLES = set(CORE_TABLES.keys())
 
 # Create a layout for the joins tab
 joins_layout = dcc.Tab(
@@ -28,7 +38,7 @@ joins_layout = dcc.Tab(
     children=[
         dcc.Store(id='joins-tab-active', data=False),
         dcc.Store(id='join-tab-full-query', data=None),  # Store the SQL query instead of data
-        dcc.Store(id='join-total-count', data=0),  # Store total count of rows
+        dcc.Store(id='joins-metadata-store', data={}),  # Cache metadata (column lists)
         html.Div(
             [
                 # Introduction section
@@ -51,6 +61,9 @@ joins_layout = dcc.Tab(
                         placeholder="Select a Garden Dataset..."
                     ),
                 ], style={"marginBottom": "25px", "padding": "15px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"}),
+
+                # Error message for general errors
+                html.Div(id="join-tab-general-error", style={"color": "red", "marginTop": "10px", "fontWeight": "bold", "textAlign": "center"}),
 
                 # Step 2: Core table columns (in a card)
                 html.Div([
@@ -135,6 +148,7 @@ joins_layout = dcc.Tab(
                     html.Button(
                         "Join Data & View Results",
                         id="join-tab-execute-button",
+                        n_clicks=0,
                         style={
                             "backgroundColor": "#28a745",
                             "color": "white",
@@ -149,11 +163,11 @@ joins_layout = dcc.Tab(
                     )
                 ], id="join-tab-execute-button-div", style={"display": "none", "textAlign": "center", "marginTop": "20px", "marginBottom": "20px"}),
 
-                # Row count input (similar to dataset.py)
+                # Row count input (similar to dataset.py) with debouncing
                 html.Div([
                     html.Label("Number of rows to display:", style={"fontWeight": "bold"}),
-                    dcc.Input(id="join-row-count", type="number", min=1, max=10000, value=20,
-                            style={"width": "100px", "margin": "10px 0"}),
+                    dcc.Input(id="join-row-count", type="number", min=1, max=1000000, value=20,
+                            style={"width": "100px", "margin": "10px 0"}, debounce=True),
                     html.Span(id="join-max-rows-info", style={"marginLeft": "10px", "color": "#666", "fontSize": "0.9em"}),
                 ], id="join-row-count-container", style={"display": "none", "marginBottom": "15px"}),
                 
@@ -169,8 +183,8 @@ joins_layout = dcc.Tab(
                                                        "borderRadius": "8px", "border": "1px solid #ffc107"}),
                 
                 # Join execution div - only shows after successful execution
-                dcc.Loading(children=[
-                    html.Div([
+                html.Div(id="join-tab-results-div", style={"display": "none", "padding": "20px", "backgroundColor": "#ffffff", 
+                                                     "borderRadius": "8px", "border": "1px solid #e0e0e0"}, children=[
                     html.H4("Results", style={"marginBottom": "15px", "color": "#133817"}),
                     
                     # Filter and selection counts
@@ -179,32 +193,21 @@ joins_layout = dcc.Tab(
                         html.Span(id='join-selected-count-text', style={"fontWeight": "bold", "marginRight": "12px"}),
                     ], style={"marginBottom": "8px"}),
                     
-                    # AG Grid table
-                    html.Div([
-                        html.Div(
-                            AgGrid(
-                                id='join-tab-grid',
-                                rowData=[],
-                                columnDefs=[],
-                                defaultColDef={
-                                    'filter': True,
-                                    'sortable': True,
-                                    'resizable': True,
-                                    'minWidth': 50,
-                                    'width': 120
-                                },
-                                dashGridOptions={'rowSelection': 'multiple', 'rowMultiSelectWithClick': True},
-                                selectedRows=[],
-                                className='ag-theme-alpine',
-                                style={'width': '100%', 'height': '500px'},
-                                enableEnterpriseModules=False,
-                            ),
-                            style={"overflowX": "auto", "width": "100%"}
-                        )
-                    ], style={"maxHeight": "600px", "overflowY": "auto", "backgroundColor": "#e5ecf6", 
-                             "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1", "marginBottom": "15px"}),
+                    # Loading indicator - wraps placeholder that gets replaced with grid
+                    dcc.Loading(
+                        id="join-grid-loading",
+                        type="default",
+                        children=html.Div(id="join-grid-wrapper", style={"maxHeight": "600px", "overflowY": "auto", "backgroundColor": "#e5ecf6", 
+                                 "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1", "marginBottom": "15px"})
+                    ),
+                    
+                    # Stats and download section
                     html.Div([
                         html.Div(id="join-tab-results-stats", style={"marginTop": "15px", "color": "#666", "fontSize": "0.95em"}),
+                        
+                        # Download warning (for large datasets)
+                        html.Div(id="join-download-warning", style={"marginTop": "10px"}),
+                        
                         html.Div([
                             html.Div([
                                 html.Label("Customize filename (optional):", style={"fontWeight": "bold", "marginBottom": "5px", "fontSize": "0.9em"}),
@@ -259,10 +262,7 @@ joins_layout = dcc.Tab(
                         dcc.Download(id="download-join-tab-csv"),
                         dcc.Download(id="download-join-tab-all-csv")
                     ])
-
-                ], id="join-tab-results-div", style={"display": "none", "padding": "20px", "backgroundColor": "#ffffff", 
-                                                     "borderRadius": "8px", "border": "1px solid #e0e0e0"})
-            ], type="circle", color="#28a745", id="join-loading-outer")
+                ])
             ]
         )
     ]
@@ -271,6 +271,13 @@ joins_layout = dcc.Tab(
 
 
 # ====== HELPERS ======
+
+def validate_table_name(table_name, allowed_set):
+    """Validate table name against whitelist."""
+    if table_name not in allowed_set:
+        raise ValueError(f"Invalid table name: {table_name}")
+    return table_name
+
 def apply_filter_model(df, filter_model):
     """Apply AG Grid filter model to a DataFrame"""
     for field, model in (filter_model or {}).items():
@@ -314,9 +321,38 @@ def apply_filter_model(df, filter_model):
                 df = df[pd.to_numeric(df[field], errors='coerce') != val]
     return df
 
+def get_column_lists_cached(metadata_store):
+    """Get cached column lists or fetch if not cached."""
+    cache_key = "all_columns"
+    
+    if cache_key in metadata_store:
+        return metadata_store[cache_key]
+    
+    # Fetch all column lists
+    try:
+        # Gardens table
+        gardens_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM dbo.[{GARDENS_TABLE}]")
+        gardens_cols = gardens_df.columns.tolist() if gardens_df is not None else []
+        
+        # Maternal tree table
+        tree_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM dbo.[{MATERNAL_TREE_TABLE}]")
+        tree_cols = tree_df.columns.tolist() if tree_df is not None else []
+        
+        return {
+            'gardens_columns': gardens_cols,
+            'tree_columns': tree_cols
+        }
+    except Exception as e:
+        print(f"Error fetching column lists: {e}")
+        return {
+            'gardens_columns': [],
+            'tree_columns': []
+        }
+
 
 
 # ====== CALLBACKS ======
+
 # Track tab selection state
 @callback(
     Output('joins-tab-active', 'data'),
@@ -344,25 +380,38 @@ def set_tab_active(tab_value):
      Output('join-tab-preview-container', 'style', allow_duplicate=True),
      Output('join-tab-preview', 'children', allow_duplicate=True),
      Output('join-tab-full-query', 'data', allow_duplicate=True),
-     Output('join-tab-grid', 'rowData', allow_duplicate=True),
-     Output('join-tab-grid', 'columnDefs', allow_duplicate=True),
+     Output('join-grid-wrapper', 'children', allow_duplicate=True),
      Output('join-tab-csv-filename', 'value', allow_duplicate=True),
-     Output('join-total-count', 'data', allow_duplicate=True),
      Output('join-row-count', 'value', allow_duplicate=True),
-     Output('join-row-count-container', 'style', allow_duplicate=True)],
+     Output('join-row-count-container', 'style', allow_duplicate=True),
+     Output('join-tab-general-error', 'children', allow_duplicate=True)],
     [Input('joins-tab-active', 'data')],
     prevent_initial_call=True
 )
 def reset_tab_data(is_active):
-    if not is_active:
-        # Reset all controls when leaving the tab
-        return (None, [], [], [], [], [], [], 
-                {"display": "none"}, {"display": "none"}, {"display": "none"}, 
-                {"display": "none"}, {"display": "none"}, {"display": "none"},
-                "", {"display": "none"}, "", None, [], [], "joined_data", 0, 20, {"display": "none"})
-    else:
-        # Don't reset when entering the tab
-        return [dash.no_update] * 23
+    if is_active:
+        raise PreventUpdate
+    # Reset all controls when leaving the tab
+    return (None, [], [], [], [], [], [], 
+            {"display": "none"}, {"display": "none"}, {"display": "none"}, 
+            {"display": "none"}, {"display": "none"}, {"display": "none"},
+            "", {"display": "none"}, "", None, html.Div(), "joined_data", 20, {"display": "none"}, "")
+
+# Cache metadata when tab becomes active
+@callback(
+    Output('joins-metadata-store', 'data'),
+    [Input('joins-tab-active', 'data')],
+    [State('joins-metadata-store', 'data')],
+    prevent_initial_call=True
+)
+def cache_metadata_on_tab_active(is_active, metadata_store):
+    if not is_active or 'all_columns' in metadata_store:
+        raise PreventUpdate
+    
+    # Fetch and cache column lists
+    column_data = get_column_lists_cached(metadata_store)
+    metadata_store['all_columns'] = column_data
+    return metadata_store
 
 # Reset core table columns when core table changes
 @callback(
@@ -372,13 +421,14 @@ def reset_tab_data(is_active):
      Output('join-tab-results-div', 'style', allow_duplicate=True),
      Output('join-tab-execute-error', 'style', allow_duplicate=True),
      Output('join-tab-preview-container', 'style', allow_duplicate=True),
-     Output('join-row-count-container', 'style', allow_duplicate=True)],
+     Output('join-row-count-container', 'style', allow_duplicate=True),
+     Output('join-tab-general-error', 'children', allow_duplicate=True)],
     [Input('join-tab-core-dropdown', 'value')],
     prevent_initial_call=True
 )
 def reset_columns_on_table_change(selected_table):
     # Reset all column selections and hide results when core table changes
-    return [], [], [], {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}
+    return [], [], [], {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}, ""
 
 # Handle conditionally rendered variable checklist - AUTO-SELECT ALL BY DEFAULT
 @callback(
@@ -393,31 +443,45 @@ def reset_columns_on_table_change(selected_table):
      Output("join-garden-table-columns-container", "style"),
      Output("join-tab-execute-button-div", "style"),
      Output("join-tab-preview-container", "style"),
-     Output("join-row-count-container", "style")],
+     Output("join-row-count-container", "style"),
+     Output("join-tab-general-error", "children")],
     [Input("join-tab-core-dropdown", "value")],
+    [State('joins-metadata-store', 'data')]
 )
-def update_core_table_columns(selected_table):
+def update_core_table_columns(selected_table, metadata_store):
     if selected_table is None:
-        return [], [], {"display": "none"}, [], [], {"display": "none"}, [], [], {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}
+        return [], [], {"display": "none"}, [], [], {"display": "none"}, [], [], {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}, ""
 
     try:
-        # Fetch garden table columns
-        sample_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM dbo.[{GARDENS_TABLE}]")
-        cols = sample_df.columns.tolist()
-        GARDENS_TABLE_OPTIONS = [{'label': c, 'value': c} for c in cols]
-        gardens_default_values = [c for c in cols]  # Auto-select all
+        # Validate table name
+        validate_table_name(selected_table, ALLOWED_CORE_TABLES)
+        
+        # Get cached column data
+        column_data = metadata_store.get('all_columns', {})
+        
+        if not column_data:
+            column_data = get_column_lists_cached(metadata_store)
+        
+        # Get columns from cache
+        gardens_cols = column_data.get('gardens_columns', [])
+        tree_cols = column_data.get('tree_columns', [])
+        
+        # Create options
+        GARDENS_TABLE_OPTIONS = [{'label': c, 'value': c} for c in gardens_cols]
+        gardens_default_values = gardens_cols  # Auto-select all
+        
+        MATERNAL_TREE_OPTIONS = [{'label': c, 'value': c} for c in tree_cols]
+        tree_default_values = tree_cols  # Auto-select all
 
-        # Fetch maternal tree table columns
-        sample_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM dbo.[{MATERNAL_TREE_TABLE}]")
-        cols = sample_df.columns.tolist()
-        MATERNAL_TREE_OPTIONS = [{'label': c, 'value': c} for c in cols]
-        tree_default_values = [c for c in cols]  # Auto-select all
-
-        # Fetch core table columns
+        # Fetch core table columns (not cached since it depends on selection)
         sample_df = fetch_data_from_sql(f"SELECT TOP 1 * FROM [dbo].[{selected_table}]")
+        if sample_df is None or sample_df.empty:
+            error_msg = "Error: Could not fetch columns from selected table"
+            return [], [], {"display": "none"}, [], [], {"display": "none"}, [], [], {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}, error_msg
+        
         cols = sample_df.columns.tolist()
         opts = [{'label': c, 'value': c} for c in cols]
-        core_default_values = [c for c in cols]  # Auto-select all
+        core_default_values = cols  # Auto-select all
         
         return (opts, core_default_values, {"display": "block", "marginBottom": "20px", 
                                             "padding": "15px", "backgroundColor": "#ffffff", 
@@ -431,67 +495,70 @@ def update_core_table_columns(selected_table):
                 {"display": "block", "textAlign": "center", "marginTop": "20px", "marginBottom": "20px"},
                 {"display": "block", "marginBottom": "20px", "padding": "15px", "backgroundColor": "#ffffff", 
                  "borderRadius": "8px", "border": "1px solid #e0e0e0"},
-                {"display": "block", "marginBottom": "15px"})
+                {"display": "block", "marginBottom": "15px"},
+                "")
+    except ValueError as ve:
+        error_msg = f"Security Error: {str(ve)}"
+        print(error_msg)
+        return [], [], {"display": "none"}, [], [], {"display": "none"}, [], [], {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}, error_msg
     except Exception as e:
-        print(f"Error fetching columns: {e}")
-        return [], [], {"display": "none"}, [], [], {"display": "none"}, [], [], {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}
+        error_msg = f"Error fetching columns: {str(e)}"
+        print(error_msg)
+        return [], [], {"display": "none"}, [], [], {"display": "none"}, [], [], {"display": "none"}, {"display": "none"}, {"display": "none"}, {"display": "none"}, error_msg
 
 # Handle Core table Select All and Deselect All buttons
 @callback(
     Output('join-core-table-options', 'value', allow_duplicate=True),
     [Input('join-select_all_btn', 'n_clicks'), 
      Input('join-deselect_all_btn', 'n_clicks')],
-    [State('join-core-table-options', 'options'), 
-     State('join-core-table-options', 'value')],
+    [State('join-core-table-options', 'options')],
     prevent_initial_call=True
 )
-def handle_core_select_buttons(select_all_clicks, deselect_all_clicks, current_options, current_values):
-    trigger_id = ctx.triggered_id if ctx.triggered_id else 'no_trigger'
+def handle_core_select_buttons(select_all_clicks, deselect_all_clicks, current_options):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else None
 
     if trigger_id == 'join-select_all_btn' and current_options:
         return [opt['value'] for opt in current_options]
     if trigger_id == 'join-deselect_all_btn':
         return []
     
-    return dash.no_update
+    raise PreventUpdate
 
 # Handle Tree table Select All and Deselect All buttons
 @callback(
     Output('join-tree-table-options', 'value', allow_duplicate=True),
     [Input('join-select_all_btn-2', 'n_clicks'), 
      Input('join-deselect_all_btn-2', 'n_clicks')],
-    [State('join-tree-table-options', 'options'), 
-     State('join-tree-table-options', 'value')],
+    [State('join-tree-table-options', 'options')],
     prevent_initial_call=True
 )
-def handle_tree_select_buttons(select_all_clicks, deselect_all_clicks, current_options, current_values):
-    trigger_id = ctx.triggered_id if ctx.triggered_id else 'no_trigger'
+def handle_tree_select_buttons(select_all_clicks, deselect_all_clicks, current_options):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else None
 
     if trigger_id == 'join-select_all_btn-2' and current_options:
         return [opt['value'] for opt in current_options]
     if trigger_id == 'join-deselect_all_btn-2':
         return []
     
-    return dash.no_update
+    raise PreventUpdate
 
 # Handle Garden table Select All and Deselect All buttons
 @callback(
     Output('join-garden-table-options', 'value', allow_duplicate=True),
     [Input('join-select_all_btn-3', 'n_clicks'), 
      Input('join-deselect_all_btn-3', 'n_clicks')],
-    [State('join-garden-table-options', 'options'), 
-     State('join-garden-table-options', 'value')],
+    [State('join-garden-table-options', 'options')],
     prevent_initial_call=True
 )
-def handle_garden_select_buttons(select_all_clicks, deselect_all_clicks, current_options, current_values):
-    trigger_id = ctx.triggered_id if ctx.triggered_id else 'no_trigger'
+def handle_garden_select_buttons(select_all_clicks, deselect_all_clicks, current_options):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else None
 
     if trigger_id == 'join-select_all_btn-3' and current_options:
         return [opt['value'] for opt in current_options]
     if trigger_id == 'join-deselect_all_btn-3':
         return []
     
-    return dash.no_update
+    raise PreventUpdate
 
 # Update join preview based on selections
 @callback(
@@ -549,25 +616,17 @@ def update_join_preview(core_table, core_vars, tree_vars, garden_vars):
     return preview_parts, {"display": "block", "marginBottom": "20px", "padding": "15px", 
                           "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"}
 
-# Update max rows info based on query (executed after join)
-@callback(
-    [Output('join-max-rows-info', 'children'), 
-     Output('join-row-count', 'max')],
-    [Input('join-total-count', 'data')]
-)
-def update_row_count_info(total_count):
-    if not total_count or total_count == 0:
-        return "", 10000
-    return f"(Max: {total_count:,} rows available)", total_count
-
-# Main execution callback - generates the SQL query and gets total count
+# Main execution callback - generates the SQL query (no count initially)
 @callback(
     [
         Output("join-tab-full-query", "data"),
-        Output("join-total-count", "data", allow_duplicate=True),
         Output("join-tab-csv-filename", "value", allow_duplicate=True),
         Output("join-tab-results-div", "style", allow_duplicate=True),
         Output("join-row-count-container", "style", allow_duplicate=True),
+        Output("join-tab-execute-button", "children"),
+        Output("join-tab-execute-button", "disabled"),
+        Output("join-tab-general-error", "children", allow_duplicate=True),
+        Output("join-row-count", "value"),
     ],
     [Input("join-tab-execute-button", "n_clicks")],
     [
@@ -580,9 +639,12 @@ def update_row_count_info(total_count):
 )
 def execute_join(n_clicks, core_table, core_table_vars, maternal_tree_vars, garden_climate_vars):
     if not n_clicks or not core_table or (not maternal_tree_vars and not garden_climate_vars):
-        return None, 0, dash.no_update, {"display": "none"}, {"display": "none"}
+        raise PreventUpdate
 
     try:
+        # Validate table name
+        validate_table_name(core_table, ALLOWED_CORE_TABLES)
+        
         # 1) Required core columns
         if core_table == "leaf_traits_2016":
             required_core_cols = ["Accession", "Locality", "Site"]
@@ -659,65 +721,91 @@ SELECT DISTINCT
 FROM [dbo].[{core_table}] core
 {chr(10).join(joins)}
 """.strip()
-
-        # Get total count
-        count_query = f"""
-SELECT COUNT(*) AS total_count FROM (
-  {base_query}
-) AS subquery
-"""
-        count_df = fetch_data_from_sql(count_query)
-        total_count = count_df.iloc[0]['total_count'] if count_df is not None and not count_df.empty else 0
         
         # Generate default filename based on core table name
         default_filename = CORE_TABLES.get(core_table, "joined_data").lower().replace(" ", "_").replace("/", "_")
         
-        # Store the base query (without TOP) for later use
-        return base_query, total_count, default_filename, {"display": "block"}, {"display": "block", "marginBottom": "15px"}
+        # Store the base query (without TOP) - count will be determined after first query
+        return (base_query, default_filename, 
+                {"display": "block", "padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"}, 
+                {"display": "block", "marginBottom": "15px"}, 
+                "Join Data & View Results", False, "", 20)
 
+    except ValueError as ve:
+        error_msg = f"Security Error: {str(ve)}"
+        print("Security error:", error_msg)
+        return None, dash.no_update, {"display": "none"}, {"display": "none"}, "Join Data & View Results", False, error_msg, 20
     except Exception as e:
-        err = f"Error executing join: {e}"
-        print("SQL Error:", err)
-        return None, 0, dash.no_update, {"display": "none"}, {"display": "none"}
+        error_msg = f"Error executing join: {str(e)}"
+        print("SQL Error:", error_msg)
+        return None, dash.no_update, {"display": "none"}, {"display": "none"}, "Join Data & View Results", False, error_msg, 20
 
-# Update the grid data based on row count
+# Update the grid data based on row count (and determine total count from actual query)
 @callback(
-    [Output('join-tab-grid', 'rowData'),
-     Output('join-tab-grid', 'columnDefs'),
+    [Output('join-grid-wrapper', 'children'),
      Output('join-tab-results-stats', 'children'),
+     Output('join-max-rows-info', 'children'),
+     Output('join-row-count', 'max'),
      Output('download-join-tab-csv-button', 'children'),
-     Output('download-join-tab-all-csv-button', 'children')],
+     Output('download-join-tab-all-csv-button', 'children'),
+     Output('join-download-warning', 'children'),
+     Output('join-tab-results-div', 'style', allow_duplicate=True),
+     Output('join-row-count-container', 'style', allow_duplicate=True)],
     [Input('join-tab-full-query', 'data'),
      Input('join-row-count', 'value')],
-    [State('join-total-count', 'data')],
     prevent_initial_call=True
 )
-def update_grid_display(base_query, row_count, total_count):
+
+def update_grid_display(base_query, row_count):
     if not base_query or row_count is None:
-        return [], [], "", dash.no_update, dash.no_update
-    
+        raise PreventUpdate
+
     try:
         # Validate row count
         if row_count < 1:
             row_count = 20
-        if total_count > 0:
-            row_count = min(row_count, total_count)
-        
-        # Execute query with TOP clause to limit rows
+
+        # Execute a single query that returns BOTH the requested rows and the full result count
+        # COUNT(*) OVER() computes the total rows in the subquery without needing a second COUNT(*) query.
         display_query = f"""
-SELECT TOP {row_count} * FROM (
+SELECT TOP {row_count}
+  q.*,
+  COUNT(*) OVER() AS __total_count__
+FROM (
   {base_query}
-) AS limited_results
+) AS q
 """
+
         result_df = fetch_data_from_sql(display_query)
-        
+
         if result_df is None or result_df.empty:
-            return [], [], "", dash.no_update, dash.no_update
-        
+            empty_div = html.Div("No results returned", style={"padding": "20px", "textAlign": "center", "color": "#666"})
+            return empty_div, "No results returned", "", 1000000, dash.no_update, dash.no_update, html.Div(), {"display": "block", "padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"}, {"display": "block", "marginBottom": "15px"}
+
+        # Pull the total count and then drop the helper column so it doesn't show in the grid/downloads
+        total_count = 0
+        if "__total_count__" in result_df.columns:
+            try:
+                total_count = int(result_df["__total_count__"].iloc[0])
+            except Exception:
+                total_count = 0
+            result_df = result_df.drop(columns=["__total_count__"], errors="ignore")
+
+        actual_rows = len(result_df)
+
+        # Max rows info (mirror dataset tab pattern)
+        if total_count > 0:
+            total_count_text = f"{total_count:,}"
+            max_rows_text = f"(Max: {total_count:,} rows available)"
+            max_val = total_count
+        else:
+            # Fallback: we couldn't determine total count; keep behavior permissive
+            total_count_text = f"{actual_rows:,}+"
+            max_rows_text = ""
+            max_val = 1000000
+
         # Prepare data for AG Grid
         row_data = result_df.to_dict("records")
-        
-        # Create columnDefs with appropriate filters based on data type
         column_defs = []
         
         # Add checkbox column pinned to left
@@ -743,8 +831,8 @@ SELECT TOP {row_count} * FROM (
                     is_num = True
                 else:
                     # Try coercing a small sample to detect numbers
-                    sample = pd.to_numeric(col_series.dropna().head(200), errors='coerce')
-                    if len(sample) > 0 and sample.notna().sum() / float(len(sample)) >= 0.5:
+                    sample = pd.to_numeric(col_series.dropna().head(TYPE_DETECTION_SAMPLE_SIZE), errors='coerce')
+                    if len(sample) > 0 and sample.notna().sum() / float(len(sample)) >= NUMERIC_THRESHOLD:
                         is_num = True
             except Exception:
                 is_num = False
@@ -772,19 +860,60 @@ SELECT TOP {row_count} * FROM (
             
             column_defs.append(col_def)
         
-        # Store column info for stats
-        stats_text = f"Displaying {len(result_df):,} of {total_count:,} total rows"
+        # Create the grid component
+        grid_component = html.Div(
+            AgGrid(
+                id='join-tab-grid',
+                rowData=row_data,
+                columnDefs=column_defs,
+                defaultColDef={
+                    'filter': True,
+                    'sortable': True,
+                    'resizable': True,
+                    'minWidth': 50,
+                    'width': 120
+                },
+                dashGridOptions={'rowSelection': 'multiple', 'rowMultiSelectWithClick': True},
+                selectedRows=[],
+                className='ag-theme-alpine',
+                style={'width': '100%', 'height': '500px'},
+                enableEnterpriseModules=False,
+            ),
+            style={"overflowX": "auto", "width": "100%"}
+        )
         
+        # Stats text - removed per user request
+        stats_text = ""
+        
+        # Button texts
         filtered_btn_text = f"Download Filtered Dataset"
-        full_btn_text = f"Download All Data ({total_count:,} rows)"
+        full_btn_text = f"Download All Data ({total_count_text} rows)"
+        
+        # Download warning for large datasets
+        download_warning = html.Div()
+        if actual_rows >= 100000:
+            download_warning = html.Div([
+                html.Span("⚠️ ", style={"fontSize": "18px"}),
+                html.Span(f"Large dataset warning: Downloading all data may take significant time and resources ({actual_rows:,}+ rows).", 
+                         style={"fontWeight": "bold"})
+            ], style={
+                "color": "#856404",
+                "backgroundColor": "#fff3cd",
+                "border": "1px solid #ffeaa7",
+                "borderRadius": "4px",
+                "padding": "12px",
+                "marginBottom": "10px"
+            })
 
-        return row_data, column_defs, stats_text, filtered_btn_text, full_btn_text
+        return grid_component, stats_text, max_rows_text, max_val, filtered_btn_text, full_btn_text, download_warning, {"display": "block", "padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"}, {"display": "block", "marginBottom": "15px"}
 
     except Exception as e:
-        print(f"Error updating grid display: {e}")
-        return [], [], "", dash.no_update, dash.no_update
+        error_msg = f"Error updating grid display: {str(e)}"
+        print(error_msg)
+        error_div = html.Div(error_msg, style={"padding": "20px", "color": "red"})
+        return error_div, "", "", 1000000, dash.no_update, dash.no_update, html.Div(), {"display": "none"}, {"display": "none"}
 
-# Reset results when any selection changes (but don't show error until execute is clicked)
+# Reset results when any selection changes
 @callback(
     [Output("join-tab-results-div", "style", allow_duplicate=True),
      Output("join-row-count-container", "style", allow_duplicate=True)],
@@ -832,7 +961,7 @@ def update_join_table_counts(row_data, selected_rows, filter_model):
 def update_download_button_text(row_data, filter_model):
     """Update download button text based on current filter state"""
     if not row_data:
-        return [dash.no_update]
+        raise PreventUpdate
     
     try:
         df = pd.DataFrame(row_data)
@@ -848,7 +977,7 @@ def update_download_button_text(row_data, filter_model):
         return [filtered_btn_text]
     except Exception as e:
         print(f"Error updating download button: {e}")
-        return [dash.no_update]
+        raise PreventUpdate
 
 # Download filtered/sorted data from AG Grid
 @callback(
@@ -862,7 +991,7 @@ def update_download_button_text(row_data, filter_model):
 )
 def download_filtered_join_results(n_clicks, row_data, selected_rows, filter_model, custom_filename):
     if not n_clicks or not row_data:
-        return dash.no_update
+        raise PreventUpdate
     
     try:
         # Priority 1: Use selected rows if any
@@ -878,12 +1007,12 @@ def download_filtered_join_results(n_clicks, row_data, selected_rows, filter_mod
             data_to_download = row_data
         
         if not data_to_download:
-            return dash.no_update
+            raise PreventUpdate
         
         # Convert data back to DataFrame
         df = pd.DataFrame(data_to_download)
         if df.empty:
-            return dash.no_update
+            raise PreventUpdate
         
         # Determine filename
         if custom_filename and custom_filename.strip():
@@ -897,7 +1026,7 @@ def download_filtered_join_results(n_clicks, row_data, selected_rows, filter_mod
         return dcc.send_data_frame(df.to_csv, filename, index=False)
     except Exception as e:
         print(f"Error during filtered download: {e}")
-        return dash.no_update
+        raise PreventUpdate
 
 # Download all data (unfiltered) - fetches from database
 @callback(
@@ -909,14 +1038,14 @@ def download_filtered_join_results(n_clicks, row_data, selected_rows, filter_mod
 )
 def download_all_join_results(n_clicks, base_query, custom_filename):
     if not n_clicks or not base_query:
-        return dash.no_update
+        raise PreventUpdate
     
     try:
         # Fetch all data from database using the stored query
         df = fetch_data_from_sql(base_query)
         
         if df is None or df.empty:
-            return dash.no_update
+            raise PreventUpdate
         
         # Determine filename
         if custom_filename and custom_filename.strip():
@@ -930,7 +1059,7 @@ def download_all_join_results(n_clicks, base_query, custom_filename):
         return dcc.send_data_frame(df.to_csv, filename, index=False)
     except Exception as e:
         print(f"Error during full download: {e}")
-        return dash.no_update
+        raise PreventUpdate
 
 # Error button
 @callback(
@@ -943,7 +1072,7 @@ def download_all_join_results(n_clicks, base_query, custom_filename):
 )
 def show_error_message(n_clicks, core_table_vars, maternal_tree_vars, garden_climate_vars):
     if n_clicks is None or n_clicks == 0:
-        return {"display": "none"}
+        raise PreventUpdate
     
     # Show error message if no maternal tree or garden climate variables are selected
     if not maternal_tree_vars and not garden_climate_vars:

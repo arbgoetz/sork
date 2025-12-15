@@ -68,91 +68,98 @@ dataset_layout = dcc.Tab(
         # Error message area
         html.Div(id="dataset-error-message", style={"color": "red", "marginTop": "20px", "fontWeight": "bold", "textAlign": "center"}),
         
-        # Ag-Grid table display
-        html.Div(id="dataset_container", style={"display": "none", "maxHeight": "800px", "overflowY": "auto", "backgroundColor": "#e5ecf6", "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1"}, children=[
-            # filter and selection counts
+        # Results container with background - starts from data grid downward
+        html.Div(id="dataset-results-container", style={"display": "none", "padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"}, children=[
+            # Ag-Grid table display
+            html.Div(id="dataset_container", style={"display": "none", "maxHeight": "800px", "overflowY": "auto", "backgroundColor": "#e5ecf6", "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1"}, children=[
+                # filter and selection counts
+                html.Div([
+                    html.Span(id='filter_count_text', style={"marginRight": "20px", "fontWeight": "bold"}),
+                    html.Span(id='selected_count_text', style={"fontWeight": "bold", "marginRight": "12px"}),
+                ], style={"marginBottom": "8px"}),
+                dcc.Loading(
+                    id="dataset-grid-loading",
+                    type="default",
+                    children=html.Div(
+                        AgGrid(
+                            id='dataset_grid',
+                            rowData=[],
+                            columnDefs=[],
+                            defaultColDef={
+                                'filter': True,
+                                'sortable': True,
+                                'resizable': True,
+                                'minWidth': 50,
+                                'width': 120
+                            },
+                            dashGridOptions={'rowSelection': 'multiple', 'rowMultiSelectWithClick': True},
+                            selectedRows=[],
+                            className='ag-theme-alpine',
+                            style={'width': '100%', 'height': '400px'},
+                            enableEnterpriseModules=False,
+                        ),
+                        style={"overflowX": "auto", "width": "100%"}
+                    )
+                )
+            ]),
+            
+            # Variable selectors for plotting
             html.Div([
-                html.Span(id='filter_count_text', style={"marginRight": "20px", "fontWeight": "bold"}),
-                html.Span(id='selected_count_text', style={"fontWeight": "bold", "marginRight": "12px"}),
-            ], style={"marginBottom": "8px"}),
-            html.Div(
-                AgGrid(
-                    id='dataset_grid',
-                    rowData=[],
-                    columnDefs=[],
-                    defaultColDef={
-                        'filter': True,
-                        'sortable': True,
-                        'resizable': True,
-                        'minWidth': 50,
-                        'width': 120
-                    },
-                    dashGridOptions={'rowSelection': 'multiple', 'rowMultiSelectWithClick': True},
-                    selectedRows=[],
-                    className='ag-theme-alpine',
-                    style={'width': '100%', 'height': '400px'},
-                    enableEnterpriseModules=False,
-                ),
-                style={"overflowX": "auto", "width": "100%"}
-            )
-        ]),
-        
-        # Variable selectors for plotting
-        html.Div([
-            html.Label("Select variables to plot selected rows:", style={"fontWeight": "bold", "marginBottom": "5px"}),
+                html.Label("Select variables to plot selected rows:", style={"fontWeight": "bold", "marginBottom": "5px"}),
+                html.Div([
+                    html.Div([
+                        html.Label("X-axis:", style={"marginRight": "5px"}),
+                        dcc.Dropdown(id="x_variable_dropdown", options=[], placeholder="Select X variable", style={"width": "100%"}),
+                    ], style={"width": "45%", "display": "inline-block", "marginRight": "5%"}),
+                    html.Div([
+                        html.Label("Y-axis:", style={"marginRight": "5px"}),
+                        dcc.Dropdown(id="y_variable_dropdown", options=[], placeholder="Select Y variable", style={"width": "100%"}),
+                    ], style={"width": "45%", "display": "inline-block"}),
+                ], style={"display": "flex", "alignItems": "center"}),
+            ], id="variable_selector", style={"display": "none", "marginBottom": "15px"}),
+            
+            # Generate figure button
+            html.Div([
+                html.Button("Generate Figure", id="generate_btn", n_clicks=0, disabled=False,
+                             style={"backgroundColor": "#007bff", "color": "white", "border": "1px solid #e0e0e0", "borderRadius": "8px", "padding": "3px 8px", "cursor": "pointer"}),
+                html.Span("", id="generate_info", style={"marginLeft": "10px", "fontWeight": "normal", "color": "#444"})
+            ], id="generate_button_div", style={"display": "none", "textAlign": "center", "marginBottom": "15px"}),
+            
+            # Warning area for Generate action
+            html.Div(id='generate_warning', children="", style={"textAlign": "center", "marginBottom": "10px"}),
+            
+            # Figure output
+            html.Div(id="figure_div", style={"display": "none"}, children=[
+                dcc.Loading(dcc.Graph(id="figure_graph"), type="default")
+            ]),
+            
+            # Graph type selector - appears AFTER figure generation for categorical × categorical
             html.Div([
                 html.Div([
-                    html.Label("X-axis:", style={"marginRight": "5px"}),
-                    dcc.Dropdown(id="x_variable_dropdown", options=[], placeholder="Select X variable", style={"width": "100%"}),
-                ], style={"width": "45%", "display": "inline-block", "marginRight": "5%"}),
-                html.Div([
-                    html.Label("Y-axis:", style={"marginRight": "5px"}),
-                    dcc.Dropdown(id="y_variable_dropdown", options=[], placeholder="Select Y variable", style={"width": "100%"}),
-                ], style={"width": "45%", "display": "inline-block"}),
-            ], style={"display": "flex", "alignItems": "center"}),
-        ], id="variable_selector", style={"display": "none", "marginBottom": "15px"}),
-        
-        # Generate figure button
-        html.Div([
-            html.Button("Generate Figure", id="generate_btn", n_clicks=0, disabled=False,
-                         style={"backgroundColor": "#007bff", "color": "white", "border": "1px solid #e0e0e0", "borderRadius": "8px", "padding": "3px 8px", "cursor": "pointer"}),
-            html.Span("", id="generate_info", style={"marginLeft": "10px", "fontWeight": "normal", "color": "#444"})
-        ], id="generate_button_div", style={"display": "none", "textAlign": "center", "marginBottom": "15px"}),
-        
-        # Warning area for Generate action
-        html.Div(id='generate_warning', children="", style={"textAlign": "center", "marginBottom": "10px"}),
-        
-        # Figure output
-        html.Div(id="figure_div", style={"display": "none"}, children=[
-            dcc.Loading(dcc.Graph(id="figure_graph"), type="default")
+                    html.Span("Switch view:", style={"fontWeight": "500", "marginRight": "15px", "color": "#333"}),
+                    dcc.RadioItems(
+                        id='cat-cat-graph-type',
+                        options=[
+                            {'label': ' 📊 Bar Chart', 'value': 'bar'},
+                            {'label': ' 🔥 Heatmap', 'value': 'heatmap'}
+                        ],
+                        value='bar',
+                        inline=True,
+                        labelStyle={"marginRight": "20px", "cursor": "pointer"},
+                        inputStyle={"marginRight": "5px"}
+                    ),
+                ], style={
+                    "display": "flex", 
+                    "alignItems": "center", 
+                    "justifyContent": "center",
+                    "padding": "12px 20px",
+                    "backgroundColor": "#f8f9fa",
+                    "borderRadius": "8px",
+                    "border": "1px solid #dee2e6",
+                    "marginTop": "15px"
+                }),
+            ], id="graph-type-selector", style={"display": "none"}),
         ]),
-        
-        # Graph type selector - appears AFTER figure generation for categorical × categorical
-        html.Div([
-            html.Div([
-                html.Span("Switch view:", style={"fontWeight": "500", "marginRight": "15px", "color": "#333"}),
-                dcc.RadioItems(
-                    id='cat-cat-graph-type',
-                    options=[
-                        {'label': ' 📊 Bar Chart', 'value': 'bar'},
-                        {'label': ' 🔥 Heatmap', 'value': 'heatmap'}
-                    ],
-                    value='bar',
-                    inline=True,
-                    labelStyle={"marginRight": "20px", "cursor": "pointer"},
-                    inputStyle={"marginRight": "5px"}
-                ),
-            ], style={
-                "display": "flex", 
-                "alignItems": "center", 
-                "justifyContent": "center",
-                "padding": "12px 20px",
-                "backgroundColor": "#f8f9fa",
-                "borderRadius": "8px",
-                "border": "1px solid #dee2e6",
-                "marginTop": "15px"
-            }),
-        ], id="graph-type-selector", style={"display": "none"}),
     ]
 )
 
@@ -493,7 +500,8 @@ def update_row_count_info(selected_table, metadata_store):
      Output('dataset_container', 'style'),
      Output('variable_selector', 'style'), 
      Output('generate_button_div', 'style'),
-     Output('dataset-error-message', 'children', allow_duplicate=True)],
+     Output('dataset-error-message', 'children', allow_duplicate=True),
+     Output('dataset-results-container', 'style')],
     [Input('dataset_dropdown', 'value'), 
      Input('options', 'value'), 
      Input('row_count', 'value')],
@@ -505,7 +513,7 @@ def update_output(selected_table, selected_columns, row_count, column_options, m
     no_display = {"display": "none"}
     
     if selected_table is None:
-        return [], [], no_display, {"display": "block"}, no_display, no_display, no_display, ""
+        return [], [], no_display, {"display": "block"}, no_display, no_display, no_display, "", no_display
     
     try:
         validate_table_name(selected_table)
@@ -532,7 +540,7 @@ def update_output(selected_table, selected_columns, row_count, column_options, m
         df = fetch_data_from_sql(query)
         
         if df is None or df.empty:
-            return [], [], no_display, {"display": "block"}, no_display, no_display, no_display, "Error: No data returned from query"
+            return [], [], no_display, {"display": "block"}, no_display, no_display, no_display, "Error: No data returned from query", no_display
         
         row_data = df.to_dict('records')
 
@@ -579,17 +587,18 @@ def update_output(selected_table, selected_columns, row_count, column_options, m
 
             column_defs.append(col_def)
         
-        return (row_data, column_defs, {"display": "block", "margin": "10px 0"}, 
+        return (row_data, column_defs, {"display": "block", "marginBottom": "15px"}, 
                 {"display": "none"}, 
                 {"display": "block", "maxHeight": "800px", "overflowY": "auto", "backgroundColor": "#e5ecf6", "padding": "10px", "borderRadius": "5px", "border": "1px solid #d1d1d1"}, 
                 {"display": "block", "marginBottom": "15px"}, 
                 {"display": "block"},
-                "")
+                "",
+                {"display": "block", "padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"})
                 
     except Exception as e:
         error_msg = f"Error loading data: {str(e)}"
         print(error_msg)
-        return [], [], no_display, {"display": "block"}, no_display, no_display, no_display, error_msg
+        return [], [], no_display, {"display": "block"}, no_display, no_display, no_display, error_msg, no_display
 
 # Generate figure based on variable types and graph type selection
 @callback(
