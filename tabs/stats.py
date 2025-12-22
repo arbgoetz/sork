@@ -54,27 +54,27 @@ stats_layout = dcc.Tab(
         html.H4("Statistical Analysis", style={"marginBottom": "20px"}),
 
         # Table selection
-        html.Label("Step 1: Select a table", style={"fontWeight": "bold", "marginBottom": "5px", "fontSize": "16px"}), 
-        dcc.Dropdown(table_options, id="stats-table-dropdown", placeholder="Select a table"),
+        html.Label("1) Select a table", style={"fontWeight": "bold", "marginBottom": "5px", "fontSize": "16px"}), 
+        dcc.Dropdown(table_options, id="stats-table-dropdown", placeholder="Table Options"),
         
         # Test selection
         html.Div([
-            html.Label("Step 2: Select analysis type", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px", "fontSize": "16px"}),
-            dcc.Dropdown(stat_test_options, id="stats-test-dropdown", placeholder="Select statistical test"),
+            html.Label("2) Select analysis type", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px", "fontSize": "16px"}),
+            dcc.Dropdown(stat_test_options, id="stats-test-dropdown", placeholder="Statistical Test Options"),
         ], id="test-selection-div", style={"display": "none"}),
         
         # Containers for each test type
         html.Div([
             # Linear Regression
             html.Div([
-                html.Label("Step 3: Select variables for Linear Regression", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
+                html.Label("3) Select variables for Linear Regression", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
                 html.Div([
                     html.Label("X-axis:", style={"marginRight": "10px"}),
-                    dcc.Dropdown(id="lr-x-variable", placeholder="Select x variable"),
+                    dcc.Dropdown(id="lr-x-variable", placeholder="Select x Variable"),
                 ], style={"marginBottom": "10px"}),
                 html.Div([
                     html.Label("Y-axis:", style={"marginRight": "10px"}),
-                    dcc.Dropdown(id="lr-y-variable", placeholder="Select y variable"),
+                    dcc.Dropdown(id="lr-y-variable", placeholder="Select y Variable"),
                 ], style={"marginBottom": "10px"}),
                 html.Button("Generate Regression", id="run-lr-button", n_clicks=0,
                            style={
@@ -109,10 +109,10 @@ stats_layout = dcc.Tab(
             
             # PCA
             html.Div([
-                html.Label("Step 3: Select variables for PCA", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
+                html.Label("3) Select variables for PCA", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
                 html.Div([
                     html.Label("Select numeric columns (minimum 2):", style={"marginRight": "10px"}),
-                    dcc.Dropdown(id="pca-variables", placeholder="Select variables", multi=True),
+                    dcc.Dropdown(id="pca-variables", placeholder="Variables", multi=True),
                 ], style={"marginBottom": "10px"}),
                 html.Div([
                     html.Label("Visualization:", style={"marginRight": "10px"}),
@@ -162,10 +162,9 @@ stats_layout = dcc.Tab(
             
             # Summary Statistics
             html.Div([
-                html.Label("Step 3: Select variable for Summary Statistics", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
+                html.Label("3) Select Variable for Summary Statistics", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
                 html.Div([
-                    html.Label("Select a numeric column:", style={"marginRight": "10px"}),
-                    dcc.Dropdown(id="summary-variable", placeholder="Select variable"),
+                    dcc.Dropdown(id="summary-variable", placeholder="Variables"),
                 ], style={"marginBottom": "10px"}),
                 html.Button("Generate Summary", id="run-summary-button", n_clicks=0,
                            style={
