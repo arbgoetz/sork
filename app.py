@@ -142,12 +142,12 @@ def serve_layout():
                     html.Br(),
                     # Give the tabs a unique ID that all components can access
                     dcc.Tabs(id='main-tabs', value='map-tab', children=[
-                        map_layout,
-                        dataset_layout,
-                        stats_layout,
                         joins_layout,
-                        upload_layout,
+                        map_layout,
+                        stats_layout,
+                        dataset_layout,
                         download_layout,
+                        upload_layout,
                     ], className="mb-4") 
                 ], className="col-8 mx-auto", style={"minHeight": "calc(100vh - 200px)"})
             ], style={"flex": "1 0 auto"}),
@@ -172,10 +172,10 @@ def serve_layout():
     else: # Not authenticated
         return html.Div([
             # Header
-            html.Div(
-                html.H1("Q-PLAD Data Portal", className="text-center fw-bold"),
-                style={"backgroundColor": 'e9ebe8', "padding": "15px"}
-            ),
+            # html.Div(
+            #     html.H5("Q-PLAD Data Portal", className="text-center fw-bold"),
+            #     style={"backgroundColor": 'e9ebe8', "padding": "15px"}
+            # ),
             # Errors
             html.Div([
                 dcc.Location(id='url', refresh=False),
@@ -184,8 +184,8 @@ def serve_layout():
             # Login content
             html.Div([
                 html.Div([
-                    html.H2("Welcome to Q-PLAD Data Portal", className="text-center"),
-                    html.P("Please log in to access unpublished data.", className="text-center"),
+                    #html.H2("Welcome to Q-PLAD Data Portal", className="text-center"),
+                    html.P("Welcome to the Q-PLAD data portal. Browse public data below or log in to access internal data.", className="text-center"),
                     html.Div([
                         html.A(
                             html.Button("Login", className="btn btn-primary"),
@@ -194,8 +194,8 @@ def serve_layout():
                             style={"width": "fit-content"}
                         )
                     ], className="text-center")
-                ], className="p-5 bg-white rounded shadow")
-            ], className="col-6 mx-auto mt-5"),
+                ], className="p-2 bg-white rounded shadow")
+            ], className="col-5 mx-auto mt-5"),
 
             # Maps tab
             html.Div([
