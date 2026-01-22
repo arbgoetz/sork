@@ -3,28 +3,36 @@ import plotly.graph_objects as go
 import pandas as pd
 from dotenv import load_dotenv
 import os
-from database import fetch_data_from_sql_pub
+from database import fetch_data_from_sql
 
 # Load environment variables
 load_dotenv(override=True)
 map_table = os.getenv("MAP_TABLE")
 
-UCLA_coordinates = {
-    "latitude": 34.0682,
-    "longitude": -118.4455
-}
 
 map_layout = dcc.Tab(
     id="maps-tab",
     value="map-tab",
     children=[
-        html.Br(),
-        html.H4("Maternal Tree Locations", style={"marginBottom": "20px"}),
+        #html.Br(),
+        html.H4("Maternal tree data", style={"marginBottom": "20px"}),
         
         html.Div([
             html.Div([
+              # The map itself
+                dcc.Graph(
+                    id='california-map',
+                    style={'height': '70vh'},
+                    config={
+                        'scrollZoom': True,
+                        'displayModeBar': True,
+                        # Removed lasso tool since it's confusing to use
+                        'modeBarButtonsToRemove': ['lasso2d']
+                    }
+                ),
                 # Header for the map
                 html.Div([
+                  html.Br(),
                     html.Button("Reset View", id="reset-map", 
                                style={
                                    "backgroundColor": "#e9ebe8",
@@ -39,17 +47,7 @@ map_layout = dcc.Tab(
                 # To track the click data 
                 dcc.Store(id='stored-click-data', data=None),
 
-                # The map itself
-                dcc.Graph(
-                    id='california-map',
-                    style={'height': '70vh'},
-                    config={
-                        'scrollZoom': True,
-                        'displayModeBar': True,
-                        # Removed lasso tool since it's confusing to use
-                        'modeBarButtonsToRemove': ['lasso2d']
-                    }
-                ),
+                
                 
                 # Simplified instructions
                 html.Div([
@@ -96,14 +94,18 @@ def update_map_and_click_data(reset_clicks, clickData):
     fig = go.Figure()
 
     # Fetch coordinates for map
-    lon_list = fetch_data_from_sql_pub(f"SELECT AVG(Longitude) AS avg_longitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_longitude'].tolist()
-    lat_list = fetch_data_from_sql_pub(f"SELECT AVG(Latitude) AS avg_latitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_latitude'].tolist()      
-    text_list = fetch_data_from_sql_pub(f"SELECT DISTINCT locality_full_name FROM dbo.[{map_table}]")['locality_full_name'].tolist()
+    lon_list = fetch_data_from_sql(f"SELECT AVG(Longitude) AS avg_longitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_longitude'].tolist()
+    lat_list = fetch_data_from_sql(f"SELECT AVG(Latitude) AS avg_latitude FROM dbo.[{map_table}] GROUP BY locality_full_name")['avg_latitude'].tolist()      
+    text_list = fetch_data_from_sql(f"SELECT DISTINCT locality_full_name FROM dbo.[{map_table}]")['locality_full_name'].tolist()
     
-    # add UCLA marker
-    lon_list.append(UCLA_coordinates['longitude'])
-    lat_list.append(UCLA_coordinates['latitude'])
-    text_list.append("UCLA (#1 Public University)")
+    lon_list_cg = [-118.4455, -120.742112, -121.782664]
+    lat_list_cg = [34.0682, 38.739841, 39.70868]
+    text_list_cg = ["UCLA (#1 Public University)", "Institute of Forest Genetics, Placerville", "Chico Seed Orchard, Chico"]
+    
+    # # add UCLA marker
+    # lon_list.append(UCLA_coordinates['longitude'])
+    # lat_list.append(UCLA_coordinates['latitude'])
+    # text_list.append("UCLA (#1 Public University)")
 
     fig.add_trace(go.Scattermapbox(
         mode = "markers+text",
@@ -112,6 +114,16 @@ def update_map_and_click_data(reset_clicks, clickData):
         text = text_list,
         textposition = "top right",
         marker = {'size':8, 'color':'#007bff'},
+        hoverinfo='text'
+    ))
+    
+    fig.add_trace(go.Scattermapbox(
+        mode = "markers+text",
+        lon = lon_list_cg,
+        lat = lat_list_cg,
+        text = text_list_cg,
+        textposition = "top right",
+        marker = {'size':8, 'color':'#000000'},
         hoverinfo='text'
     ))
     
@@ -147,12 +159,12 @@ def display_click_data(clickData):
             locality_name = clickData['points'][0]['text']
             
             # get column names from the table
-            columns = fetch_data_from_sql_pub(f"SELECT TOP 1 * FROM dbo.[{map_table}]").columns.tolist()
+            columns = fetch_data_from_sql(f"SELECT TOP 1 * FROM dbo.[{map_table}]").columns.tolist()
             columns.remove('Accession')
             columns_string = ', '.join(columns)
 
             # Fetch all data for this location
-            df = fetch_data_from_sql_pub(f"SELECT {columns_string} FROM dbo.[{map_table}] WHERE locality_full_name = '{locality_name}'")
+            df = fetch_data_from_sql(f"SELECT {columns_string} FROM dbo.[{map_table}] WHERE locality_full_name = '{locality_name}'")
 
             if df.empty:
                 return html.Div([
