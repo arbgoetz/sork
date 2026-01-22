@@ -19,20 +19,21 @@ NUMERIC_THRESHOLD = 0.5
 # Table definitions
 CORE_TABLES = {
     "db_main": "Growth/Survival",
-    "budburst_detailed_all": "All Budburst Stages",
+    "budburst_detailed_all": "All budburst stages",
+    "budburst_summary": "Budburst summaries",
     "biomass_destructive_2021": "Biomass",
     "leaf_traits_2016": "Leaf traits",
 }
 
-MATERNAL_TREE_TABLE = "Valley oak maternal tree climate data BCM 2018_03_08"
-GARDENS_TABLE = "gardens_20152023prismmonthly"
+MATERNAL_TREE_TABLE = "adult_origin_climate"
+GARDENS_TABLE = "dat_cgp_db"
 
 # Whitelists for validation
 ALLOWED_CORE_TABLES = set(CORE_TABLES.keys())
 
 # Create a layout for the joins tab
 joins_layout = dcc.Tab(
-    label="Table Joins",
+    label="Select and filter",
     id="joins-tab",
     style={"padding": "15px"},
     children=[
@@ -700,7 +701,7 @@ LEFT JOIN (
 
             if core_table == "leaf_traits_2016":
                 garden_cols = ["[Site]"] + [f"[{c}]" for c in safe_garden_vars]
-                join_cond   = "core.[Site] = garden.[Site]"
+                join_cond   = "core.[Site] = garden.[Site] AND garden.[Year] = 2016"
             else:
                 garden_cols = ["TRY_CAST(TRY_CAST([Year] AS NUMERIC) AS INT) AS [Year]",
                                "[Site]"] + [f"[{c}]" for c in safe_garden_vars]
