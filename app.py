@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 from flask import Flask, redirect, session, jsonify, request
 from authlib.integrations.flask_client import OAuth
 from urllib.parse import parse_qs
-from cache_config import cache
 
 load_dotenv(override=True)
 
@@ -115,17 +114,9 @@ app.index_string = '''
 </html>
 '''
 
-cache.init_app(server, config={
-    'CACHE_TYPE': 'filesystem',
-    'CACHE_DIR': '/tmp',
-    'CACHE_THRESHOLD': 100
-})
-
 def serve_layout():
 
     dcc.Location(id='url', refresh=False)
-    dcc.Store(id='joined-dataset-store'),
-    dcc.Store(id="cached-data-key")
 
     if 'user' in session: # Authenticated layout
         return html.Div([
@@ -237,6 +228,10 @@ def serve_layout():
 app.layout = serve_layout
 
 
+
+
+
+# ===== CALLBACKS =====
 @app.callback(
     Output('user-info', 'children'),
     Input('main-tabs', 'value')

@@ -1,10 +1,7 @@
 import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table, ctx
-import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
 import pandas as pd
-from io import StringIO
-import base64
 from database import fetch_data_from_sql
 from dotenv import load_dotenv
 import os

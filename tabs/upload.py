@@ -1,5 +1,4 @@
-from dash import dcc, html, Input, Output, State, callback, dash_table, ctx
-import dash_bootstrap_components as dbc
+from dash import dcc, html, Input, Output, State, callback, dash_table
 from dash.exceptions import PreventUpdate
 import dash
 import pandas as pd
@@ -8,8 +7,6 @@ import base64
 from database import fetch_data_from_sql
 from dotenv import load_dotenv
 import os
-import sqlalchemy
-from sqlalchemy import create_engine
 
 # Load environment variables
 load_dotenv(override=True)

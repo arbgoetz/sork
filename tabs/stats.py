@@ -1,4 +1,5 @@
-from dash import dcc, html, Input, Output, State, callback
+from dash import dcc, html, Input, Output, State, callback, ctx
+from dash.exceptions import PreventUpdate
 import dash
 import plotly.graph_objects as go
 import plotly.express as px
@@ -8,17 +9,27 @@ from scipy import stats
 from database import fetch_data_from_sql
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-import dash_bootstrap_components as dbc
 from dotenv import load_dotenv
 import os
-from cache_config import cache
 
 # Load environment variables
 load_dotenv(override=True)
 
-# Table Options
+# Table Options - Hardcoded whitelist
 table_options = os.getenv("TABLE_OPTIONS").split(",")
+ALLOWED_TABLES = set(table_options)
 
+# ===== CONFIGURATION CONSTANTS =====
+
+# Sampling configuration
+DEFAULT_SAMPLE_SIZE = 50000
+MIN_SAMPLE_SIZE = 10000
+MEDIUM_SAMPLE_SIZE = 20000
+
+# Minimum data requirements
+MIN_ROWS_FOR_REGRESSION = 3
+MIN_ROWS_FOR_PCA = 3
+MIN_VARS_FOR_PCA = 2
 
 # Statistical test options
 stat_test_options = [
@@ -35,39 +46,37 @@ stats_layout = dcc.Tab(
     children=[
         # Store the tab's active state
         dcc.Store(id="stats-tab-active", data=False),
+        
+        # Store for table metadata (row counts, numeric columns)
+        dcc.Store(id="stats-metadata-store", data={}),
+        
         html.Br(),
         html.H4("Statistical Analysis", style={"marginBottom": "20px"}),
-        html.Div([
-            html.Button("Use Joined Dataset", id="use-joined-button", n_clicks=0, style={"border": "1px solid #133817"}),
-            dcc.Store(id="use-joined-flag", data=False),  # Flag to track button click
-            html.Div(id="joined-dataset-status", style={"marginTop": "10px", "color": "#007bff"})
-        ]),
-            
 
         # Table selection
-        html.Label("Step 1: Select a table", style={"fontWeight": "bold", "marginBottom": "5px", "fontSize": "16px"}), 
-        dcc.Dropdown(table_options, id="stats-table-dropdown", placeholder="Select a table"),
+        html.Label("1) Select a table", style={"fontWeight": "bold", "marginBottom": "5px", "fontSize": "16px"}), 
+        dcc.Dropdown(table_options, id="stats-table-dropdown", placeholder="Table Options"),
         
         # Test selection
         html.Div([
-            html.Label("Step 2: Select analysis type", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px", "fontSize": "16px"}),
-            dcc.Dropdown(stat_test_options, id="stats-test-dropdown", placeholder="Select statistical test"),
+            html.Label("2) Select analysis type", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px", "fontSize": "16px"}),
+            dcc.Dropdown(stat_test_options, id="stats-test-dropdown", placeholder="Statistical Test Options"),
         ], id="test-selection-div", style={"display": "none"}),
         
         # Containers for each test type
         html.Div([
             # Linear Regression
             html.Div([
-                html.Label("Step 3: Select variables for Linear Regression", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
+                html.Label("3) Select variables for Linear Regression", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
                 html.Div([
-                    html.Label("X-axis (independent variable):", style={"marginRight": "10px"}),
-                    dcc.Dropdown(id="lr-x-variable", placeholder="Select x variable"),
+                    html.Label("X-axis:", style={"marginRight": "10px"}),
+                    dcc.Dropdown(id="lr-x-variable", placeholder="Select x Variable"),
                 ], style={"marginBottom": "10px"}),
                 html.Div([
-                    html.Label("Y-axis (dependent variable):", style={"marginRight": "10px"}),
-                    dcc.Dropdown(id="lr-y-variable", placeholder="Select y variable"),
+                    html.Label("Y-axis:", style={"marginRight": "10px"}),
+                    dcc.Dropdown(id="lr-y-variable", placeholder="Select y Variable"),
                 ], style={"marginBottom": "10px"}),
-                html.Button("Generate Regression", id="run-lr-button", 
+                html.Button("Generate Regression", id="run-lr-button", n_clicks=0,
                            style={
                                "backgroundColor": "#007bff",
                                "color": "white",
@@ -76,15 +85,34 @@ stats_layout = dcc.Tab(
                                "padding": "5px 15px",
                                "marginTop": "10px"
                            }),
-                html.Div(id="lr-output", style={"marginTop": "20px"})
+                html.Div(id="lr-output", style={"marginTop": "20px"}, children=[
+                    dcc.Loading(id="lr-loading", type="default", children=html.Div(id="lr-output-content"))
+                ]),
+                # Hidden full dataset button
+                html.Div(id="lr-full-button-container", style={"display": "none"}, children=[
+                    html.Button(
+                        "🔄 Analyze Full Dataset",
+                        id="run-lr-full",
+                        n_clicks=0,
+                        style={
+                            "backgroundColor": "#28a745",
+                            "color": "white",
+                            "border": "none",
+                            "borderRadius": "4px",
+                            "padding": "5px 15px",
+                            "marginTop": "10px",
+                            "cursor": "pointer"
+                        }
+                    )
+                ])
             ], id="linear-regression-div", style={"display": "none"}),
             
             # PCA
             html.Div([
-                html.Label("Step 3: Select variables for PCA", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
+                html.Label("3) Select variables for PCA", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
                 html.Div([
-                    html.Label("Select numeric columns:", style={"marginRight": "10px"}),
-                    dcc.Dropdown(id="pca-variables", placeholder="Select variables", multi=True),
+                    html.Label("Select numeric columns (minimum 2):", style={"marginRight": "10px"}),
+                    dcc.Dropdown(id="pca-variables", placeholder="Variables", multi=True),
                 ], style={"marginBottom": "10px"}),
                 html.Div([
                     html.Label("Visualization:", style={"marginRight": "10px"}),
@@ -99,7 +127,7 @@ stats_layout = dcc.Tab(
                         style={"marginBottom": "10px"}
                     ),
                 ]),
-                html.Button("Generate PCA", id="run-pca-button", 
+                html.Button("Generate PCA", id="run-pca-button", n_clicks=0,
                            style={
                                "backgroundColor": "#007bff",
                                "color": "white",
@@ -108,17 +136,37 @@ stats_layout = dcc.Tab(
                                "padding": "5px 15px",
                                "marginTop": "10px"
                            }),
-                html.Div(id="pca-output", style={"marginTop": "20px"})
+                # Warning message for insufficient variables
+                html.Div(id="pca-warning", style={"marginTop": "10px"}),
+                html.Div(id="pca-output", style={"marginTop": "20px"}, children=[
+                    dcc.Loading(id="pca-loading", type="default", children=html.Div(id="pca-output-content"))
+                ]),
+                # Hidden full dataset button
+                html.Div(id="pca-full-button-container", style={"display": "none"}, children=[
+                    html.Button(
+                        "🔄 Analyze Full Dataset",
+                        id="run-pca-full",
+                        n_clicks=0,
+                        style={
+                            "backgroundColor": "#28a745",
+                            "color": "white",
+                            "border": "none",
+                            "borderRadius": "4px",
+                            "padding": "5px 15px",
+                            "marginTop": "10px",
+                            "cursor": "pointer"
+                        }
+                    )
+                ])
             ], id="pca-div", style={"display": "none"}),
             
             # Summary Statistics
             html.Div([
-                html.Label("Step 3: Select variable for Summary Statistics", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
+                html.Label("3) Select Variable for Summary Statistics", style={"fontWeight": "bold", "marginTop": "20px", "marginBottom": "5px"}),
                 html.Div([
-                    html.Label("Select a numeric column:", style={"marginRight": "10px"}),
-                    dcc.Dropdown(id="summary-variable", placeholder="Select variable"),
+                    dcc.Dropdown(id="summary-variable", placeholder="Variables"),
                 ], style={"marginBottom": "10px"}),
-                html.Button("Generate Summary", id="run-summary-button", 
+                html.Button("Generate Summary", id="run-summary-button", n_clicks=0,
                            style={
                                "backgroundColor": "#007bff",
                                "color": "white",
@@ -127,7 +175,26 @@ stats_layout = dcc.Tab(
                                "padding": "5px 15px",
                                "marginTop": "10px"
                            }),
-                html.Div(id="summary-output", style={"marginTop": "20px"})
+                html.Div(id="summary-output", style={"marginTop": "20px"}, children=[
+                    dcc.Loading(id="summary-loading", type="default", children=html.Div(id="summary-output-content"))
+                ]),
+                # Hidden full dataset button
+                html.Div(id="summary-full-button-container", style={"display": "none"}, children=[
+                    html.Button(
+                        "🔄 Analyze Full Dataset",
+                        id="run-summary-full",
+                        n_clicks=0,
+                        style={
+                            "backgroundColor": "#28a745",
+                            "color": "white",
+                            "border": "none",
+                            "borderRadius": "4px",
+                            "padding": "5px 15px",
+                            "marginTop": "10px",
+                            "cursor": "pointer"
+                        }
+                    )
+                ])
             ], id="summary-stats-div", style={"display": "none"}),
             
         ], id="test-container", style={"display": "none"}),
@@ -141,6 +208,81 @@ stats_layout = dcc.Tab(
         ]),
     ]
 )
+
+
+
+# ===== HELPERS =====
+
+# Validate table name against whitelist
+def validate_table_name(table_name):
+    if table_name not in ALLOWED_TABLES:
+        raise ValueError(f"Invalid table name: {table_name}")
+    return table_name
+
+# Get approximate row count using sys.partitions
+def get_table_row_count(table_name):
+    try:
+        validate_table_name(table_name)
+        query = f"""
+        SELECT SUM(p.rows) AS row_count
+        FROM sys.partitions p
+        INNER JOIN sys.objects o ON p.object_id = o.object_id
+        WHERE o.name = '{table_name}' 
+          AND p.index_id IN (0, 1)
+        """
+        result = fetch_data_from_sql(query)
+        if result is not None and not result.empty:
+            return int(result.iloc[0]['row_count'])
+        return None
+    except Exception as e:
+        print(f"Error fetching row count for {table_name}: {e}")
+        return None
+
+# Get numeric column names from INFORMATION_SCHEMA
+def get_numeric_column_names(table_name):
+    try:
+        validate_table_name(table_name)
+        query = f"""
+        SELECT COLUMN_NAME, DATA_TYPE 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = '{table_name}'
+        ORDER BY ORDINAL_POSITION
+        """
+        result = fetch_data_from_sql(query)
+        if result is not None and not result.empty:
+            # Known numeric types in SQL Server
+            numeric_types = {
+                'int', 'bigint', 'smallint', 'tinyint',
+                'decimal', 'numeric', 'float', 'real',
+                'money', 'smallmoney'
+            }
+            numeric_cols = result[result['DATA_TYPE'].str.lower().isin(numeric_types)]['COLUMN_NAME'].tolist()
+            return numeric_cols
+        return []
+    except Exception as e:
+        print(f"Error fetching numeric columns for {table_name}: {e}")
+        return []
+
+# Calculate appropriate sample size based on total rows
+def calculate_sample_size(total_rows):
+    if total_rows <= MIN_SAMPLE_SIZE:
+        return total_rows  # Use all data
+    elif total_rows <= 100000:
+        return min(MEDIUM_SAMPLE_SIZE, total_rows)  # 20K sample for medium tables
+    else:
+        return DEFAULT_SAMPLE_SIZE  # 50K sample for large tables
+
+# Format sample size information for display
+def format_sample_info(sample_size, total_rows):
+    if sample_size >= total_rows:
+        return f"✓ Analysis based on all {total_rows:,} rows"
+    else:
+        percentage = (sample_size / total_rows) * 100
+        return f"✓ Analysis based on {sample_size:,} rows ({percentage:.1f}% of total {total_rows:,} rows)"
+
+
+
+# ===== CALLBACKS =====
 
 # Track tab selection state
 @callback(
@@ -158,19 +300,57 @@ def set_stats_tab_active(tab_value):
      Output('lr-y-variable', 'value', allow_duplicate=True),
      Output('pca-variables', 'value', allow_duplicate=True),
      Output('summary-variable', 'value', allow_duplicate=True),
-     Output('lr-output', 'children', allow_duplicate=True),
-     Output('pca-output', 'children', allow_duplicate=True),
-     Output('summary-output', 'children', allow_duplicate=True)],
+     Output('lr-output-content', 'children', allow_duplicate=True),
+     Output('pca-output-content', 'children', allow_duplicate=True),
+     Output('summary-output-content', 'children', allow_duplicate=True)],
     [Input('stats-tab-active', 'data')],
     prevent_initial_call=True
 )
 def reset_stats_tab_data(is_active):
-    if not is_active:
-        # Reset all controls when leaving the tab
-        return None, None, None, None, None, None, html.Div(), html.Div(), html.Div()
-    else:
-        # Don't reset when entering the tab
-        return [dash.no_update] * 9
+    if is_active:
+        raise PreventUpdate
+    # Reset all controls when leaving the tab
+    return None, None, None, None, None, None, html.Div(), html.Div(), html.Div()
+
+# Fetch and cache table metadata when table is selected
+@callback(
+    [Output('stats-metadata-store', 'data'),
+     Output('test-selection-div', 'style'),
+     Output('stats-placeholder', 'style')],
+    [Input('stats-table-dropdown', 'value')],
+    [State('stats-metadata-store', 'data')],
+    prevent_initial_call=True
+)
+def fetch_stats_metadata(selected_table, metadata_store):
+    if selected_table is None:
+        return metadata_store, {"display": "none"}, {"display": "block"}
+    
+    try:
+        validate_table_name(selected_table)
+        
+        # Check if metadata already cached
+        if selected_table in metadata_store:
+            return metadata_store, {"display": "block"}, {"display": "none"}
+        
+        # Fetch metadata
+        row_count = get_table_row_count(selected_table)
+        numeric_columns = get_numeric_column_names(selected_table)
+        
+        if not numeric_columns:
+            print(f"Warning: No numeric columns found in {selected_table}")
+        
+        # Store metadata
+        metadata_store[selected_table] = {
+            'row_count': row_count,
+            'numeric_columns': numeric_columns
+        }
+        
+        return metadata_store, {"display": "block"}, {"display": "none"}
+        
+    except Exception as e:
+        error_msg = f"Error loading table metadata: {str(e)}"
+        print(error_msg)
+        return metadata_store, {"display": "none"}, {"display": "block"}
 
 # Reset dependent controls when table changes
 @callback(
@@ -179,22 +359,20 @@ def reset_stats_tab_data(is_active):
      Output('lr-y-variable', 'value', allow_duplicate=True),
      Output('pca-variables', 'value', allow_duplicate=True),
      Output('summary-variable', 'value', allow_duplicate=True),
-     Output('lr-output', 'children', allow_duplicate=True),
-     Output('pca-output', 'children', allow_duplicate=True),
-     Output('summary-output', 'children', allow_duplicate=True),
-     Output('test-selection-div', 'style'),
-     Output('test-container', 'style'),
-     Output('stats-placeholder', 'style')],
+     Output('lr-output-content', 'children', allow_duplicate=True),
+     Output('pca-output-content', 'children', allow_duplicate=True),
+     Output('summary-output-content', 'children', allow_duplicate=True),
+     Output('test-container', 'style')],
     [Input('stats-table-dropdown', 'value')],
     prevent_initial_call=True
 )
 def reset_on_table_change(selected_table):
     if selected_table:
         # Reset analysis-related controls but show test selection
-        return None, None, None, None, None, html.Div(), html.Div(), html.Div(), {"display": "block"}, {"display": "none"}, {"display": "none"}
+        return None, None, None, None, None, html.Div(), html.Div(), html.Div(), {"display": "none"}
     else:
         # Hide everything when no table is selected
-        return None, None, None, None, None, html.Div(), html.Div(), html.Div(), {"display": "none"}, {"display": "none"}, {"display": "block"}
+        return None, None, None, None, None, html.Div(), html.Div(), html.Div(), {"display": "none"}
 
 # Callback to show appropriate test container based on selection
 @callback(
@@ -202,9 +380,9 @@ def reset_on_table_change(selected_table):
      Output("linear-regression-div", "style"),
      Output("pca-div", "style"),
      Output("summary-stats-div", "style"),
-     Output('lr-output', 'children', allow_duplicate=True),
-     Output('pca-output', 'children', allow_duplicate=True),
-     Output('summary-output', 'children', allow_duplicate=True)],
+     Output('lr-output-content', 'children', allow_duplicate=True),
+     Output('pca-output-content', 'children', allow_duplicate=True),
+     Output('summary-output-content', 'children', allow_duplicate=True)],
     [Input("stats-test-dropdown", "value")],
     prevent_initial_call=True
 )
@@ -221,86 +399,84 @@ def show_test_container(selected_test):
     
     return {"display": "block"}, lr_style, pca_style, summary_style, empty_output, empty_output, empty_output
 
-# Function to get numeric columns from a table
-def get_numeric_columns(table_name):
-    try:
-        # Get a sample of data to determine column types
-        df = fetch_data_from_sql(f"SELECT TOP 100 * FROM [dbo].[{table_name}]")
-        
-        # Filter to only numeric columns
-        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-        return numeric_cols
-    except Exception as e:
-        print(f"Error getting numeric columns: {e}")
-        return []
-
-# Callback to populate dropdowns with numeric columns
+# Callback to populate dropdowns with numeric columns from cache
 @callback(
     [Output("lr-x-variable", "options"),
      Output("lr-y-variable", "options"),
      Output("pca-variables", "options"),
      Output("summary-variable", "options")],
-    [Input("stats-table-dropdown", "value")], 
-    State("joined-dataset-store", "data")
+    [Input("stats-table-dropdown", "value"),
+     Input("stats-metadata-store", "data")]
 )
-def update_variable_options(selected_table, joined_data):
-    if not selected_table:
-        empty_options = []
-        return empty_options, empty_options, empty_options, empty_options
+def update_variable_options(selected_table, metadata_store):
+    if not selected_table or selected_table not in metadata_store:
+        return [], [], [], []
     
     try:
-        if selected_table == "__joined__" and joined_data:
-            df = pd.DataFrame(cache.get(joined_data))
-        else:
-            df = fetch_data_from_sql(f"SELECT TOP 100 * FROM [dbo].[{selected_table}]")
-
-        if df is None or df.empty:
-            return empty_options, empty_options, empty_options, empty_options
-    
-        numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+        numeric_cols = metadata_store[selected_table].get('numeric_columns', [])
         options = [{"label": col, "value": col} for col in numeric_cols]
-        
         return options, options, options, options
     except Exception as e:
-        print(f"Error fetching variables: {e}")
-        return [], []
+        print(f"Error updating variable options: {e}")
+        return [], [], [], []
+
+# Clear PCA warning when variables are selected
+@callback(
+    Output("pca-warning", "children", allow_duplicate=True),
+    [Input("pca-variables", "value")],
+    prevent_initial_call=True
+)
+def clear_pca_warning(variables):
+    """Clear warning when user changes variable selection."""
+    return html.Div()
 
 # Linear Regression Callback
 @callback(
-    Output("lr-output", "children", allow_duplicate=True),
-    [Input("run-lr-button", "n_clicks")],
+    [Output("lr-output-content", "children", allow_duplicate=True),
+     Output("run-lr-button", "disabled", allow_duplicate=True),
+     Output("run-lr-button", "children", allow_duplicate=True),
+     Output("lr-full-button-container", "style"),
+     Output("run-lr-full", "children")],
+    [Input("run-lr-button", "n_clicks"),
+     Input("run-lr-full", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("lr-x-variable", "value"),
-     State("lr-y-variable", "value"), 
-     State("joined-dataset-store", "data")],
-     State("use-joined-flag", "data"),
+     State("lr-y-variable", "value"),
+     State("stats-metadata-store", "data")],
     prevent_initial_call=True
 )
-def generate_linear_regression(n_clicks, selected_table, x_var, y_var, joined_data, use_joined):
-    if n_clicks is None or not selected_table or not x_var or not y_var:
-        return html.Div()
+def generate_linear_regression(n_clicks_sample, n_clicks_full, selected_table, x_var, y_var, metadata_store):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else None
+    
+    if not trigger_id or not selected_table or not x_var or not y_var:
+        raise PreventUpdate
     
     try:
-        # If join, use cached data
-        if use_joined and joined_data:
-            cached_df = pd.DataFrame(cache.get(joined_data))
-            if cached_df is None:
-                return html.Div([
-                    html.H5("Cache Miss", style={"color": "red"}),
-                    html.P("Cached dataset not found. Please re-run the join or reload data.")
-                ])
-            df = cached_df[[x_var, y_var]].dropna()
+        validate_table_name(selected_table)
+        
+        # Get metadata
+        metadata = metadata_store.get(selected_table, {})
+        total_rows = metadata.get('row_count', DEFAULT_SAMPLE_SIZE)
+        
+        # Determine if full dataset requested
+        use_full_dataset = (trigger_id == "run-lr-full")
+        
+        if use_full_dataset:
+            sample_size = total_rows
         else:
-            # Fetch the data
-            query = f"SELECT [{x_var}], [{y_var}] FROM [dbo].[{selected_table}] WHERE [{x_var}] IS NOT NULL AND [{y_var}] IS NOT NULL"
-            df = fetch_data_from_sql(query)
+            sample_size = calculate_sample_size(total_rows)
+        
+        # Fetch the data with limit
+        query = f"SELECT TOP {sample_size} [{x_var}], [{y_var}] FROM [dbo].[{selected_table}] WHERE [{x_var}] IS NOT NULL AND [{y_var}] IS NOT NULL"
+        df = fetch_data_from_sql(query)
         
         # Check if we have enough data
-        if df is None or df.empty:
-            return html.Div([
+        if df is None or df.empty or len(df) < MIN_ROWS_FOR_REGRESSION:
+            return (html.Div([
                 html.H5("Insufficient Data", style={"color": "red"}),
                 html.P("Not enough valid data points for regression analysis.")
-            ])
+            ], style={"color": "red", "fontWeight": "bold"}), 
+            False, "Generate Regression", {"display": "none"}, "🔄 Analyze Full Dataset")
             
         # Calculate regression
         x = df[x_var].values
@@ -404,57 +580,100 @@ def generate_linear_regression(n_clicks, selected_table, x_var, y_var, joined_da
             ], style={"borderCollapse": "collapse", "width": "100%", "marginBottom": "20px"})
         ])
         
-        return html.Div([
+        # Sample size info
+        sample_info = html.Div(
+            format_sample_info(len(df), total_rows),
+            style={"color": "#28a745", "fontWeight": "bold", "marginTop": "15px", "fontSize": "14px"}
+        )
+        
+        result = html.Div([
             dcc.Graph(figure=fig),
-            stats_table
-        ])
+            stats_table,
+            sample_info
+        ], style={"padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"})
+        
+        # Show button only if sample was used
+        show_button = (len(df) < total_rows and not use_full_dataset)
+        button_style = {"display": "block", "marginTop": "15px", "textAlign": "center"} if show_button else {"display": "none"}
+        button_text = f"🔄 Analyze Full Dataset ({total_rows:,} rows)"
+        
+        return result, False, "Generate Regression", button_style, button_text
     
     except Exception as e:
-        return html.Div([
+        error_msg = html.Div([
             html.H5("Error", style={"color": "red"}),
             html.P(f"An error occurred: {str(e)}")
-        ])
-    
+        ], style={"color": "red", "fontWeight": "bold"})
+        print(f"Linear regression error: {e}")
+        return error_msg, False, "Generate Regression", {"display": "none"}, "🔄 Analyze Full Dataset"
+
 # PCA Callback
 @callback(
-    Output("pca-output", "children", allow_duplicate=True),
-    [Input("run-pca-button", "n_clicks")],
+    [Output("pca-output-content", "children", allow_duplicate=True),
+     Output("run-pca-button", "children", allow_duplicate=True),
+     Output("pca-full-button-container", "style"),
+     Output("run-pca-full", "children"),
+     Output("pca-warning", "children")],
+    [Input("run-pca-button", "n_clicks"),
+     Input("run-pca-full", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("pca-variables", "value"),
      State("pca-dimensions", "value"),
-     State("joined-dataset-store", "data")],
-    State("use-joined-flag", "data"),
+     State("stats-metadata-store", "data")], 
     prevent_initial_call=True
 )
-def generate_pca(n_clicks, selected_table, variables, dimensions, joined_data, use_joined):
-    if n_clicks is None or not selected_table or not variables or len(variables) < 2:
-        return html.Div()
+def generate_pca(n_clicks_sample, n_clicks_full, selected_table, variables, dimensions, metadata_store):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else None
+    
+    if not trigger_id or not selected_table:
+        raise PreventUpdate
+    
+    # Check for minimum variables FIRST and show warning
+    if not variables or len(variables) < MIN_VARS_FOR_PCA:
+        warning_msg = html.Div([
+            html.Span("⚠️ ", style={"fontSize": "18px"}),
+            html.Span(f"Please select at least {MIN_VARS_FOR_PCA} variables to perform PCA analysis.", 
+                     style={"fontWeight": "bold"})
+        ], style={
+            "color": "#856404",
+            "backgroundColor": "#fff3cd",
+            "border": "1px solid #ffeaa7",
+            "borderRadius": "4px",
+            "padding": "12px",
+            "marginTop": "10px"
+        })
+        return html.Div(), "Generate PCA", {"display": "none"}, "🔄 Analyze Full Dataset", warning_msg
     
     try:
-        # Fetch the data
-        # If join, use cached data
-        if use_joined and joined_data:
-            cached_df = pd.DataFrame(cache.get(joined_data))
-            if cached_df is None:
-                return html.Div([
-                    html.H5("Cache Miss", style={"color": "red"}),
-                    html.P("Cached dataset not found. Please re-run the join or reload data.")
-                ])
-            df = cached_df
+        validate_table_name(selected_table)
+        
+        # Get metadata
+        metadata = metadata_store.get(selected_table, {})
+        total_rows = metadata.get('row_count', DEFAULT_SAMPLE_SIZE)
+        
+        # Determine if full dataset requested
+        use_full_dataset = (trigger_id == "run-pca-full")
+        
+        if use_full_dataset:
+            sample_size = total_rows
         else:
-            columns = ", ".join([f"[{var}]" for var in variables])
-            query = f"SELECT {columns} FROM [dbo].[{selected_table}]"
-            df = fetch_data_from_sql(query)
+            sample_size = calculate_sample_size(total_rows)
+        
+        # Fetch the data
+        columns = ", ".join([f"[{var}]" for var in variables])
+        query = f"SELECT TOP {sample_size} {columns} FROM [dbo].[{selected_table}]"
+        df = fetch_data_from_sql(query)
         
         # Drop rows with NaN values
         df = df.dropna()
         
         # Check if we have enough data
-        if len(df) < 3:
-            return html.Div([
+        if len(df) < MIN_ROWS_FOR_PCA:
+            error_msg = html.Div([
                 html.H5("Insufficient Data", style={"color": "red"}),
                 html.P("Not enough valid data points for PCA analysis.")
-            ])
+            ], style={"color": "red", "fontWeight": "bold"})
+            return error_msg, "Generate PCA", {"display": "none"}, "🔄 Analyze Full Dataset", html.Div()
         
         # Scale the data
         scaler = StandardScaler()
@@ -559,57 +778,80 @@ def generate_pca(n_clicks, selected_table, variables, dimensions, joined_data, u
             ], style={"borderCollapse": "collapse", "width": "100%", "marginBottom": "20px"})
         ])
         
-        return html.Div([
+        # Sample size info
+        sample_info = html.Div(
+            format_sample_info(len(df), total_rows),
+            style={"color": "#28a745", "fontWeight": "bold", "marginTop": "15px", "fontSize": "14px"}
+        )
+        
+        result = html.Div([
             dcc.Graph(figure=fig),
             variance_table,
-            loadings_table
-        ])
+            loadings_table,
+            sample_info
+        ], style={"padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"})
+        
+        # Show button only if sample was used
+        show_button = (len(df) < total_rows and not use_full_dataset)
+        button_style = {"display": "block", "marginTop": "15px", "textAlign": "center"} if show_button else {"display": "none"}
+        button_text = f"🔄 Analyze Full Dataset ({total_rows:,} rows)"
+        
+        # Clear warning on success
+        return result, "Generate PCA", button_style, button_text, html.Div()
     
     except Exception as e:
-        return html.Div([
+        error_msg = html.Div([
             html.H5("Error", style={"color": "red"}),
             html.P(f"An error occurred: {str(e)}")
-        ])
+        ], style={"color": "red", "fontWeight": "bold"})
+        print(f"PCA error: {e}")
+        return error_msg, "Generate PCA", {"display": "none"}, "🔄 Analyze Full Dataset", html.Div()
 
 # Summary Statistics Callback
 @callback(
-    Output("summary-output", "children", allow_duplicate=True),
-    [Input("run-summary-button", "n_clicks")],
+    [Output("summary-output-content", "children", allow_duplicate=True),
+     Output("run-summary-button", "children", allow_duplicate=True),
+     Output("summary-full-button-container", "style"),
+     Output("run-summary-full", "children")],
+    [Input("run-summary-button", "n_clicks"),
+     Input("run-summary-full", "n_clicks")],
     [State("stats-table-dropdown", "value"),
      State("summary-variable", "value"),
-     State("joined-dataset-store", "data")],
-    State("use-joined-flag", "data"),
+     State("stats-metadata-store", "data")],
     prevent_initial_call=True
 )
-def generate_summary_statistics(n_clicks, selected_table, variable, joined_data, use_joined):
-    if n_clicks is None or not selected_table or not variable:
-        return html.Div()
+def generate_summary_statistics(n_clicks_sample, n_clicks_full, selected_table, variable, metadata_store):
+    trigger_id = ctx.triggered_id if ctx.triggered_id else None
+    
+    if not trigger_id or not selected_table or not variable:
+        raise PreventUpdate
     
     try:
-        if use_joined and joined_data:
-            cached_df = pd.DataFrame(cache.get(joined_data))
-            if cached_df is None:
-                return html.Div([
-                    html.H5("Cache Miss", style={"color": "red"}),
-                    html.P("Cached dataset not found. Please re-run the join or reload data.")
-                ])
-            df = cached_df
-            if variable not in df.columns:
-                return html.Div([
-                    html.H5("Column Not Found", style={"color": "red"}),
-                    html.P(f"The variable '{variable}' is not in the joined dataset.")
-                ])
+        validate_table_name(selected_table)
+        
+        # Get metadata
+        metadata = metadata_store.get(selected_table, {})
+        total_rows = metadata.get('row_count', DEFAULT_SAMPLE_SIZE)
+        
+        # Determine if full dataset requested
+        use_full_dataset = (trigger_id == "run-summary-full")
+        
+        if use_full_dataset:
+            sample_size = total_rows
         else:
-            # Fetch the data
-            query = f"SELECT [{variable}] FROM [dbo].[{selected_table}] WHERE [{variable}] IS NOT NULL"
-            df = fetch_data_from_sql(query)
+            sample_size = calculate_sample_size(total_rows)
+        
+        # Fetch the data
+        query = f"SELECT TOP {sample_size} [{variable}] FROM [dbo].[{selected_table}] WHERE [{variable}] IS NOT NULL"
+        df = fetch_data_from_sql(query)
             
         # Check if we have enough data
-        if len(df) < 1:
-            return html.Div([
+        if df is None or len(df) < 1:
+            return (html.Div([
                 html.H5("Insufficient Data", style={"color": "red"}),
                 html.P("No valid data points for summary statistics.")
-            ])
+            ], style={"color": "red", "fontWeight": "bold"}), 
+            "Generate Summary", {"display": "none"}, "🔄 Analyze Full Dataset")
         
         # Calculate statistics
         data = df[variable]
@@ -697,66 +939,30 @@ def generate_summary_statistics(n_clicks, selected_table, variable, joined_data,
             ], style={"borderCollapse": "collapse", "width": "100%", "marginBottom": "20px"})
         ])
         
-        return html.Div([
+        # Sample size info
+        sample_info = html.Div(
+            format_sample_info(len(data), total_rows),
+            style={"color": "#28a745", "fontWeight": "bold", "marginTop": "15px", "fontSize": "14px"}
+        )
+        
+        result = html.Div([
             dcc.Graph(figure=fig_box, style={"marginBottom": "20px"}),
             dcc.Graph(figure=fig_hist, style={"marginBottom": "20px"}),
-            stats_table
-        ])
+            stats_table,
+            sample_info
+        ], style={"padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "8px", "border": "1px solid #e0e0e0"})
+        
+        # Show button only if sample was used
+        show_button = (len(data) < total_rows and not use_full_dataset)
+        button_style = {"display": "block", "marginTop": "15px", "textAlign": "center"} if show_button else {"display": "none"}
+        button_text = f"🔄 Analyze Full Dataset ({total_rows:,} rows)"
+        
+        return result, "Generate Summary", button_style, button_text
         
     except Exception as e:
-        return html.Div([
+        error_msg = html.Div([
             html.H5("Error", style={"color": "red"}),
             html.P(f"An error occurred: {str(e)}")
-        ])
-    
-@callback(
-    Output("use-joined-flag", "data"),
-    Output("joined-dataset-status", "children"),
-    Output("use-joined-button", "children"),
-    Input("use-joined-button", "n_clicks"),
-    State("joined-dataset-store", "data"),
-    State("use-joined-flag", "data"),
-    prevent_initial_call=True
-)
-def enable_joined_dataset(n_clicks, joined_data, current_flag):
-    if joined_data is None:
-        return False, "No joined dataset found.", "Use joined dataset"
-    if current_flag is None:
-        current_flag = False
-
-    new_flag = not current_flag
-    if new_flag:
-        label = "Disable Joined Dataset"
-        status_message = "Joined dataset enabled for analysis."
-        print(f'Cache key: {joined_data}')
-    else:
-        label = "Use Joined Dataset"
-        status_message = "Joined dataset disabled."
-
-    return new_flag, status_message, label
-
-@callback(
-    Output("stats-table-dropdown", "value"),
-    Input("use-joined-flag", "data"),
-    State("stats-table-dropdown", "options"),
-    prevent_initial_call=True
-)
-def update_dropdown_on_join_flag(use_joined, table_options):
-    if use_joined:
-        # Set a special placeholder value to signal "joined dataset"
-        # Add cache key to table_options
-        return "__joined__"
-    return dash.no_update
-
-@callback(
-    Output("stats-table-dropdown", "options"),
-    Input("use-joined-flag", "data"),
-    State("joined-dataset-store", "data")
-)
-def update_table_options(use_joined, joined_data):
-    options = [{"label": table, "value": table} for table in table_options]
-    # If the joined dataset is available, add it to options
-    if use_joined and joined_data:
-        options.insert(0, {"label": "Joined Dataset", "value": "__joined__"})
-
-    return options
+        ], style={"color": "red", "fontWeight": "bold"})
+        print(f"Summary statistics error: {e}")
+        return error_msg, "Generate Summary", {"display": "none"}, "🔄 Analyze Full Dataset"
