@@ -72,7 +72,7 @@ def unauthorized():
     )
 
 css = ["https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"]
-app = Dash(name="Sork Lab Dashboard", server=server, external_stylesheets=css, suppress_callback_exceptions=True, requests_pathname_prefix='/app/')
+app = Dash(name="Q-PLAD Data Portal", server=server, external_stylesheets=css, suppress_callback_exceptions=True, requests_pathname_prefix = '/app/')
 
 # Font editting and coloring
 app.index_string = '''
@@ -124,7 +124,7 @@ def serve_layout():
             html.Div([
                 # Header
                 html.Div(
-                    html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
+                    html.H1("Q-PLAD Data Portal", className="text-center fw-bold"),
                     style={"backgroundColor": '#e9ebe8', "padding": "15px"}
                 ),
                 # AUTH0 CHECK -- TEST
@@ -154,7 +154,7 @@ def serve_layout():
             
             # Footer that stays at the bottom
             html.Footer(
-                html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
+                html.Div("Q-PLAD Data Portal © 2026", className="text-center text-muted py-3"),
                 style={
                     "backgroundColor": "#e9ebe8", 
                     "color": "#e3e3e3", 
@@ -173,7 +173,7 @@ def serve_layout():
         return html.Div([
             # Header
             html.Div(
-                html.H1("Sork Lab Dashboard", className="text-center fw-bold"),
+                html.H1("Q-PLAD Data Portal", className="text-center fw-bold"),
                 style={"backgroundColor": 'e9ebe8', "padding": "15px"}
             ),
             # Errors
@@ -184,8 +184,8 @@ def serve_layout():
             # Login content
             html.Div([
                 html.Div([
-                    html.H2("Welcome to Sork Lab Dashboard", className="text-center"),
-                    html.P("Please log in to access the dashboard features.", className="text-center"),
+                    html.H2("Welcome to Q-PLAD Data Portal", className="text-center"),
+                    html.P("Please log in to access unpublished data.", className="text-center"),
                     html.Div([
                         html.A(
                             html.Button("Login", className="btn btn-primary"),
@@ -208,7 +208,7 @@ def serve_layout():
 
             # Footer that stays at the bottom
             html.Footer(
-                html.Div("Sork Lab Dashboard © 2025", className="text-center text-muted py-3"),
+                html.Div("Q-PLAD Data Portal © 2025", className="text-center text-muted py-3"),
                 style={
                     "backgroundColor": "#e9ebe8", 
                     "color": "#e3e3e3", 
